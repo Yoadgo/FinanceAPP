@@ -3,12 +3,13 @@
 Pages.portfolio = (() => {
 
   /* ── State ── */
-  let _positions  = [];   // enriched open positions
-  let _rtMap      = {};   // { SYMBOL: { price, change } }
-  let _fxRate     = null;
-  let _portFilter = 'all';
-  let _currency   = 'USD';
-  let _container  = null;
+  let _positions    = [];
+  let _rtMap        = {};
+  let _fxRate       = null;
+  let _portFilter   = 'all';
+  let _currency     = 'USD';
+  let _container    = null;
+  let _enrichedTxns = null;
 
   /* ── Helpers ── */
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
@@ -39,54 +40,104 @@ Pages.portfolio = (() => {
     return (_currency === 'ILS' && _fxRate) ? usdVal * _fxRate : usdVal;
   }
 
-  /* ─────────── Position calculation ─────────── */
-
+  /* ═══════════════════════════════════════════════════
+     FIFO Position Calculator
+     ── Key by symbol only (global ledger).
+     ── Uses ExecutionRate as cost-per-share; falls back
+        to TotalFX/Qty if ExecutionRate is missing.
+     ── Sells consume the oldest lots first (FIFO).
+     ── Splits adjust all existing lots proportionally.
+     ══════════════════════════════════════════════════ */
   function _computePositions(transactions) {
-    const map = {};
+    const ledger = {};
 
     const relevant = transactions
-      .filter(r => ['BUY_STOCK','SELL_STOCK','SPLIT','BONUS'].includes(r.subCategory))
+      .filter(r => ['BUY_STOCK', 'SELL_STOCK', 'SPLIT', 'BONUS'].includes(r.subCategory))
       .sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
     relevant.forEach(row => {
-      const sym  = (row.Symbol || '').trim();
-      const port = (row.Portfolio || '').trim();
+      const sym = (row.Symbol || '').trim();
       if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
 
-      const key = `${port}::${sym}`;
-      if (!map[key]) map[key] = { symbol: sym, portfolio: port, qty: 0, totalCost: 0 };
+      const rawQty = n(row.Qty);
+      if (rawQty <= 0) return;
 
-      const qty     = n(row.Qty);
-      const totalFX = n(row.TotalFX);
+      const rawPrice = n(row.ExecutionRate);
+      // Fallback: derive per-share cost from TotalFX when ExecutionRate is absent
+      const costPerShare = rawPrice > 0
+        ? rawPrice
+        : (rawQty > 0 ? Math.abs(n(row.TotalFX)) / rawQty : 0);
 
+      const port = (row.Portfolio || '').trim();
+
+      if (!ledger[sym]) {
+        ledger[sym] = { symbol: sym, portfolio: port, qty: 0, lots: [] };
+      }
+      const item = ledger[sym];
+      if (port) item.portfolio = port; // keep most-recent non-empty portfolio name
+
+      /* ── BUY: push a new lot ── */
       if (row.subCategory === 'BUY_STOCK') {
-        map[key].totalCost += Math.abs(totalFX);
-        map[key].qty       += qty;
+        item.qty += rawQty;
+        item.lots.push({ qty: rawQty, costPerShare, date: row.Date });
 
+      /* ── SELL: FIFO consume oldest lots ── */
       } else if (row.subCategory === 'SELL_STOCK') {
-        const avgPerShare   = map[key].qty > 0 ? map[key].totalCost / map[key].qty : 0;
-        map[key].totalCost -= avgPerShare * qty;
-        map[key].qty       -= qty;
-        if (map[key].qty < 0.0001) { map[key].qty = 0; map[key].totalCost = 0; }
+        let remaining = rawQty;
+        while (remaining > 0.0001 && item.lots.length > 0) {
+          if (item.lots[0].qty > remaining) {
+            item.lots[0].qty -= remaining;
+            remaining = 0;
+          } else {
+            remaining -= item.lots[0].qty;
+            item.lots.shift();
+          }
+        }
+        item.qty -= rawQty;
+        if (item.qty < 0) item.qty = 0;
 
-      } else if (row.subCategory === 'SPLIT' || row.subCategory === 'BONUS') {
-        map[key].qty += qty; // no change to cost
+      /* ── SPLIT: scale existing lots (qty×ratio, cost÷ratio) ── */
+      } else if (row.subCategory === 'SPLIT') {
+        if (item.qty > 0.0001) {
+          const newTotal = item.qty + rawQty;
+          const ratio    = newTotal / item.qty;
+          item.lots.forEach(lot => {
+            lot.qty          *= ratio;
+            lot.costPerShare /= ratio;
+          });
+        }
+        item.qty += rawQty;
+
+      /* ── BONUS: add shares at zero cost ── */
+      } else if (row.subCategory === 'BONUS') {
+        item.qty += rawQty;
+        item.lots.push({ qty: rawQty, costPerShare: 0, date: row.Date });
       }
     });
 
-    return Object.values(map)
-      .filter(p => p.qty > 0.0001)
-      .map(p => ({ ...p, avgCost: p.qty > 0 ? p.totalCost / p.qty : 0 }));
+    return Object.values(ledger)
+      .filter(p => p.qty > 0.01)
+      .map(p => {
+        const totalCost = p.lots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
+        return {
+          symbol:    p.symbol,
+          portfolio: p.portfolio,
+          qty:       p.qty,
+          totalCost,
+          avgCost:   p.qty > 0 ? totalCost / p.qty : 0,
+        };
+      });
   }
 
+  /* ── Enrich with real-time prices ── */
   function _enrich(positions) {
     return positions.map(pos => {
-      const rt       = _rtMap[pos.symbol] || {};
-      const price    = rt.price  ?? null;
-      const change   = rt.change ?? null;
-      const mktVal   = price !== null ? pos.qty * price : null;
-      const pnl      = mktVal !== null ? mktVal - pos.totalCost : null;
-      const pnlPct   = pos.totalCost > 0 && pnl !== null ? (pnl / pos.totalCost) * 100 : null;
+      const rt     = _rtMap[pos.symbol] || {};
+      const price  = rt.price  ?? null;
+      const change = rt.change ?? null;
+      const mktVal = price !== null ? pos.qty * price : null;
+      const pnl    = mktVal !== null ? mktVal - pos.totalCost : null;
+      const pnlPct = pos.totalCost > 0 && pnl !== null ? (pnl / pos.totalCost) * 100 : null;
       return { ...pos, currentPrice: price, changePercent: change, marketValue: mktVal, pnl, pnlPct };
     });
   }
@@ -108,12 +159,14 @@ Pages.portfolio = (() => {
     return { totalValue, totalCost, pnl, pnlPct, count: positions.length, priced };
   }
 
-  /* ─────────── Render entry point ─────────── */
-
+  /* ═══════════════════════════════════════════════════
+     Render entry point
+     ══════════════════════════════════════════════════ */
   function render(container) {
-    _container  = container;
-    _portFilter = 'all';
-    _currency   = 'USD';
+    _container    = container;
+    _portFilter   = 'all';
+    _currency     = 'USD';
+    _enrichedTxns = null;
 
     container.innerHTML = `
       <div class="pf-loading" id="pf-loading">
@@ -130,17 +183,32 @@ Pages.portfolio = (() => {
     _loadData();
   }
 
+  /* ── Two-phase loading ──
+     Phase 1 — transactions (often from localStorage cache → instant)
+     Phase 2 — real-time prices + FX (network, fills in prices) */
   async function _loadData() {
+    const loading = document.getElementById('pf-loading');
+    const body    = document.getElementById('pf-body');
+
     try {
       App.setDataStatus('loading');
 
-      const [txns, rtRows, fxRate] = await Promise.all([
-        DataService.getTransactions(),
+      /* Phase 1: positions without prices (fast from cache) */
+      const txns    = await DataService.getTransactions();
+      _enrichedTxns = Classifier.enrichAll(txns);
+      _positions    = _computePositions(_enrichedTxns);
+
+      if (loading) loading.style.display = 'none';
+      if (body) { body.style.display = 'block'; _paint(body); }
+
+      /* Phase 2: live prices + FX in parallel */
+      const [rtRows, fxRate] = await Promise.all([
         DataService.getRealTimeData().catch(() => []),
         DataService.getFxRate().catch(() => null),
       ]);
 
       _fxRate = fxRate;
+      if (_fxRate) App.setFxRate(_fxRate);
 
       _rtMap = {};
       (rtRows || []).forEach(row => {
@@ -151,18 +219,12 @@ Pages.portfolio = (() => {
         _rtMap[sym] = { price: price || null, change: isNaN(change) ? null : change };
       });
 
-      const enrichedTxns = Classifier.enrichAll(txns);
-      _positions = _enrich(_computePositions(enrichedTxns));
-
+      _positions = _enrich(_computePositions(_enrichedTxns));
       App.setDataStatus('live');
-      const loading = document.getElementById('pf-loading');
-      const body    = document.getElementById('pf-body');
-      if (loading) loading.style.display = 'none';
-      if (body)    { body.style.display = 'block'; _paint(body); }
+      if (body) _paint(body);
 
     } catch (err) {
       App.setDataStatus('error', err.message);
-      const loading = document.getElementById('pf-loading');
       if (loading) loading.innerHTML = `
         <div class="empty-icon" style="margin:0 auto;background:rgba(217,48,37,0.08)">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -175,8 +237,9 @@ Pages.portfolio = (() => {
     }
   }
 
-  /* ─────────── Paint ─────────── */
-
+  /* ═══════════════════════════════════════════════════
+     Paint (full repaint of pf-body)
+     ══════════════════════════════════════════════════ */
   function _paint(container) {
     _container = container;
     const vis   = _visible();
@@ -184,9 +247,8 @@ Pages.portfolio = (() => {
     const ports = [...new Set(_positions.map(p => p.portfolio).filter(Boolean))].sort();
 
     container.innerHTML =
-      _renderFxBar() +
+      _renderToolbar(ports) +
       _renderMacros(mac) +
-      (ports.length > 1 ? _renderPortFilter(ports) : '') +
       `<div class="pf-charts-row">
         <div class="pf-chart-card pf-chart-bar">
           <div class="pf-chart-title">עלות מושקעת מול שווי נוכחי</div>
@@ -203,20 +265,21 @@ Pages.portfolio = (() => {
     _bindEvents(container);
   }
 
-  /* ── FX Bar ── */
-  function _renderFxBar() {
-    const rateStr  = _fxRate ? `$1 = ₪${_fxRate.toFixed(3)}` : 'שער USD/ILS לא זמין';
+  /* ── Toolbar: portfolio tabs + currency toggle ── */
+  function _renderToolbar(ports) {
     const usdActive = _currency === 'USD' ? 'active' : '';
     const ilsActive = _currency === 'ILS' ? 'active' : '';
+
+    const portTabs = ports.length > 1 ? `
+      <div class="pf-filter-bar">
+        <span class="pf-filter-label">תיק:</span>
+        <button class="pf-port-btn${_portFilter === 'all' ? ' active' : ''}" data-port="all">כל התיקים</button>
+        ${ports.map(p => `<button class="pf-port-btn${_portFilter === p ? ' active' : ''}" data-port="${p}">${p}</button>`).join('')}
+      </div>` : '<div></div>';
+
     return `
-      <div class="pf-fx-bar">
-        <div class="pf-fx-rate">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-          </svg>
-          <span class="pf-fx-val">${rateStr}</span>
-          <span class="pf-fx-src">USD/ILS</span>
-        </div>
+      <div class="pf-toolbar">
+        ${portTabs}
         <div class="pf-curr-toggle">
           <span class="pf-toggle-label">תצוגה:</span>
           <button class="pf-curr-btn ${usdActive}" data-curr="USD">$ USD</button>
@@ -227,10 +290,10 @@ Pages.portfolio = (() => {
 
   /* ── Macro Cards ── */
   function _renderMacros(m) {
-    const sym = currSym();
-    const tv  = toDisplay(m.totalValue);
-    const tc  = toDisplay(m.totalCost);
-    const pnl = toDisplay(m.pnl);
+    const sym      = currSym();
+    const tv       = toDisplay(m.totalValue);
+    const tc       = toDisplay(m.totalCost);
+    const pnl      = toDisplay(m.pnl);
     const pnlColor = m.pnl >= 0 ? 'var(--success)' : 'var(--danger)';
     const pnlSign  = m.pnl >= 0 ? '+' : '−';
     const noPrice  = m.count - m.priced;
@@ -257,19 +320,9 @@ Pages.portfolio = (() => {
       </div>`;
   }
 
-  /* ── Portfolio Filter ── */
-  function _renderPortFilter(ports) {
-    return `
-      <div class="pf-filter-bar">
-        <span class="pf-filter-label">תיק:</span>
-        <button class="pf-port-btn${_portFilter==='all'?' active':''}" data-port="all">כל התיקים</button>
-        ${ports.map(p => `<button class="pf-port-btn${_portFilter===p?' active':''}" data-port="${p}">${p}</button>`).join('')}
-      </div>`;
-  }
-
   /* ── Bar Chart (SVG) ── */
   function _renderBarChart(positions) {
-    const sym  = currSym();
+    const sym   = currSym();
     const items = positions.map(p => ({
       symbol: p.symbol,
       cost:   toDisplay(p.totalCost)   ?? 0,
@@ -279,16 +332,11 @@ Pages.portfolio = (() => {
 
     if (!items.length) return '<p class="pf-no-data">אין נתונים</p>';
 
-    const maxVal  = Math.max(...items.map(it => Math.max(it.cost, it.value))) * 1.08;
-    const H       = 162;
-    const padL    = 54;
-    const padB    = 32;
-    const padT    = 8;
-    const chartH  = H - padB - padT;
-    const barW    = 20;
-    const grpW    = 56;
-
-    const yS = v => padT + chartH - (v / maxVal) * chartH;
+    const maxVal = Math.max(...items.map(it => Math.max(it.cost, it.value))) * 1.08;
+    const H      = 162, padL = 54, padB = 32, padT = 8;
+    const chartH = H - padB - padT;
+    const barW   = 20, grpW = 56;
+    const yS     = v => padT + chartH - (v / maxVal) * chartH;
 
     let grid = '', yLbls = '';
     for (let i = 0; i <= 4; i++) {
@@ -303,14 +351,13 @@ Pages.portfolio = (() => {
 
     let bars = '', xLbls = '';
     items.forEach((it, i) => {
-      const gX    = padL + i * grpW + 4;
-      const cH    = Math.max((it.cost  / maxVal) * chartH, 1);
-      const vH    = Math.max((it.value / maxVal) * chartH, 1);
-      const cY    = padT + chartH - cH;
-      const vY    = padT + chartH - vH;
-      const hasPnl = it.pnl !== null;
-      const vCol  = hasPnl ? (it.pnl >= 0 ? '#059669' : '#DC2626') : '#64748B';
-      const midX  = gX + barW + 3;
+      const gX   = padL + i * grpW + 4;
+      const cH   = Math.max((it.cost  / maxVal) * chartH, 1);
+      const vH   = Math.max((it.value / maxVal) * chartH, 1);
+      const cY   = padT + chartH - cH;
+      const vY   = padT + chartH - vH;
+      const vCol = it.pnl !== null ? (it.pnl >= 0 ? '#059669' : '#DC2626') : '#64748B';
+      const midX = gX + barW + 3;
 
       bars  += `<rect x="${gX}" y="${cY.toFixed(1)}" width="${barW}" height="${cH.toFixed(1)}" fill="#94A3B8" rx="2"/>
                 <rect x="${gX+barW+4}" y="${vY.toFixed(1)}" width="${barW}" height="${vH.toFixed(1)}" fill="${vCol}" rx="2" opacity="0.88"/>`;
@@ -345,7 +392,6 @@ Pages.portfolio = (() => {
 
     const total = items.reduce((s, it) => s + it.value, 0);
     const cx = 76, cy = 76, r = 66, ir = 40;
-
     let paths = '';
 
     if (items.length === 1) {
@@ -354,9 +400,9 @@ Pages.portfolio = (() => {
     } else {
       let angle = -Math.PI / 2;
       items.forEach(it => {
-        const sweep  = (it.value / total) * 2 * Math.PI;
-        const end    = angle + sweep;
-        const large  = sweep > Math.PI ? 1 : 0;
+        const sweep = (it.value / total) * 2 * Math.PI;
+        const end   = angle + sweep;
+        const large = sweep > Math.PI ? 1 : 0;
         const x1  = cx + r  * Math.cos(angle), y1  = cy + r  * Math.sin(angle);
         const x2  = cx + r  * Math.cos(end),   y2  = cy + r  * Math.sin(end);
         const ix1 = cx + ir * Math.cos(angle), iy1 = cy + ir * Math.sin(angle);
@@ -378,8 +424,8 @@ Pages.portfolio = (() => {
       <div class="pf-pie-wrap">
         <svg width="152" height="152" viewBox="0 0 152 152" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0">
           ${paths}
-          <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="9.5" fill="var(--text-muted)" font-family="Inter,sans-serif">סה"כ</text>
-          <text x="${cx}" y="${cy+11}" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-primary)" font-family="Inter,sans-serif">${items.length} מניות</text>
+          <text x="${cx}" y="${cy-4}"  text-anchor="middle" font-size="9.5" fill="var(--text-muted)"    font-family="Inter,sans-serif">סה"כ</text>
+          <text x="${cx}" y="${cy+11}" text-anchor="middle" font-size="11"  font-weight="600" fill="var(--text-primary)" font-family="Inter,sans-serif">${items.length} מניות</text>
         </svg>
         <div class="pf-pie-legend">${legend}</div>
       </div>`;
@@ -397,21 +443,36 @@ Pages.portfolio = (() => {
       const pnlCls  = p.pnl === null ? '' : p.pnl >= 0 ? 'pos' : 'neg';
       const chgCls  = p.changePercent === null ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
 
+      /* Price cell: bigger font colored by daily direction + % change below */
+      const priceCell = price !== null
+        ? `<div class="pf-price-cell">
+             <span class="pf-price-main ${chgCls}">${sym}${fmtMoney(price)}</span>
+             ${p.changePercent !== null
+               ? `<span class="pf-price-chg ${chgCls}">${fmtPct(p.changePercent)}</span>`
+               : ''}
+           </div>`
+        : '<span class="pf-td-muted">—</span>';
+
+      /* P&L cell: amount + % stacked */
+      const pnlCell = pnl !== null
+        ? `<div class="pf-pnl-cell ${pnlCls}">
+             <span class="pf-pnl-amt">${p.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(pnl))}</span>
+             <span class="pf-pnl-pct">${fmtPct(p.pnlPct)}</span>
+           </div>`
+        : '<span class="pf-td-muted">—</span>';
+
       return `<tr>
         <td><span class="pf-sym-badge">${p.symbol}</span></td>
         ${showPort ? `<td class="pf-td-muted">${p.portfolio}</td>` : ''}
-        <td class="pf-td-num">${p.qty.toLocaleString('he-IL',{maximumFractionDigits:4})}</td>
-        <td>
-          <span class="pf-price-val">${price !== null ? `${sym}${fmtMoney(price)}` : '—'}</span>
-          ${p.changePercent !== null ? `<span class="pf-chg-badge ${chgCls}">${fmtPct(p.changePercent)}</span>` : ''}
-        </td>
+        <td class="pf-td-num">${p.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</td>
+        <td>${priceCell}</td>
         <td class="pf-td-num">${avgCost !== null ? `${sym}${fmtMoney(avgCost)}` : '—'}</td>
         <td class="pf-td-num pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</td>
-        <td class="pf-td-pnl ${pnlCls}">${pnl !== null ? `${p.pnl>=0?'+':'−'}${sym}${fmtMoney(Math.abs(pnl))}` : '—'}</td>
-        <td class="pf-td-pnl ${pnlCls}">${fmtPct(p.pnlPct)}</td>
+        <td>${pnlCell}</td>
       </tr>`;
     }).join('');
 
+    const colspan = showPort ? 8 : 7;
     return `
       <div class="pf-table-wrap">
         <table class="pf-table">
@@ -423,12 +484,11 @@ Pages.portfolio = (() => {
               <th>שער אחרון</th>
               <th>מחיר כניסה</th>
               <th>שווי שוק</th>
-              <th>רווח/הפסד</th>
-              <th>%</th>
+              <th>רווח / הפסד</th>
             </tr>
           </thead>
           <tbody>
-            ${rows || `<tr><td colspan="8" class="pf-no-data">אין פוזיציות פתוחות</td></tr>`}
+            ${rows || `<tr><td colspan="${colspan}" class="pf-no-data">אין פוזיציות פתוחות</td></tr>`}
           </tbody>
         </table>
       </div>`;
@@ -443,23 +503,44 @@ Pages.portfolio = (() => {
     }
 
     const cards = positions.map(p => {
-      const price   = toDisplay(p.currentPrice);
-      const mktVal  = toDisplay(p.marketValue);
-      const pnl     = toDisplay(p.pnl);
-      const pnlCls  = p.pnl === null ? '' : p.pnl >= 0 ? 'pos' : 'neg';
-      const chgCls  = p.changePercent === null ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
+      const price  = toDisplay(p.currentPrice);
+      const mktVal = toDisplay(p.marketValue);
+      const pnl    = toDisplay(p.pnl);
+      const pnlCls = p.pnl === null ? '' : p.pnl >= 0 ? 'pos' : 'neg';
+      const chgCls = p.changePercent === null ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
 
       return `<div class="pf-card">
         <div class="pf-card-top">
           <span class="pf-sym-badge">${p.symbol}</span>
-          ${p.changePercent !== null ? `<span class="pf-chg-badge ${chgCls}">${fmtPct(p.changePercent)}</span>` : ''}
+          ${p.changePercent !== null
+            ? `<span class="pf-chg-badge ${chgCls}">${fmtPct(p.changePercent)}</span>`
+            : ''}
           <span class="pf-card-port">${p.portfolio}</span>
         </div>
         <div class="pf-card-grid">
-          <div class="pf-card-cell"><span class="pf-card-lbl">כמות</span><span>${p.qty.toLocaleString('he-IL',{maximumFractionDigits:4})}</span></div>
-          <div class="pf-card-cell"><span class="pf-card-lbl">שער</span><span>${price !== null ? `${sym}${fmtMoney(price)}` : '—'}</span></div>
-          <div class="pf-card-cell"><span class="pf-card-lbl">שווי</span><span class="pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</span></div>
-          <div class="pf-card-cell pf-td-pnl ${pnlCls}"><span class="pf-card-lbl">רווח/הפסד</span><span>${pnl !== null ? `${p.pnl>=0?'+':'−'}${sym}${fmtMoney(Math.abs(pnl))} (${fmtPct(p.pnlPct)})` : '—'}</span></div>
+          <div class="pf-card-cell">
+            <span class="pf-card-lbl">כמות</span>
+            <span>${p.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</span>
+          </div>
+          <div class="pf-card-cell">
+            <span class="pf-card-lbl">שער</span>
+            <span class="pf-price-main ${chgCls}" style="font-size:14px">
+              ${price !== null ? `${sym}${fmtMoney(price)}` : '—'}
+            </span>
+          </div>
+          <div class="pf-card-cell">
+            <span class="pf-card-lbl">שווי שוק</span>
+            <span class="pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</span>
+          </div>
+          <div class="pf-card-cell">
+            <span class="pf-card-lbl">רווח / הפסד</span>
+            <div class="pf-pnl-cell ${pnlCls}" style="align-items:flex-start">
+              ${pnl !== null
+                ? `<span class="pf-pnl-amt">${p.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(pnl))}</span>
+                   <span class="pf-pnl-pct">${fmtPct(p.pnlPct)}</span>`
+                : '—'}
+            </div>
+          </div>
         </div>
       </div>`;
     }).join('');

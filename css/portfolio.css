@@ -10,46 +10,21 @@
   gap: 10px;
 }
 
-/* ── FX Bar ── */
-.pf-fx-bar {
+/* ── Toolbar: portfolio filter + currency toggle ── */
+.pf-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 16px;
-  margin-bottom: 14px;
   gap: 12px;
-}
-
-.pf-fx-rate {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.pf-fx-val {
-  font-family: 'Roboto Mono', monospace;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-size: 13.5px;
-}
-
-.pf-fx-src {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  background: var(--bg-subtle);
-  border-radius: 4px;
-  padding: 1px 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 
 .pf-curr-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .pf-toggle-label {
@@ -319,6 +294,63 @@
 
 .pf-td-muted { color: var(--text-muted); font-size: 12px; }
 
+/* ── Price cell (redesigned) ── */
+.pf-price-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.pf-price-main {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.pf-price-main.pos { color: var(--success); }
+.pf-price-main.neg { color: var(--danger);  }
+
+.pf-price-chg {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pf-price-chg.pos { color: var(--success); }
+.pf-price-chg.neg { color: var(--danger);  }
+
+/* ── P&L stacked cell ── */
+.pf-pnl-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.pf-pnl-amt {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.pf-pnl-pct {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pf-pnl-cell.pos .pf-pnl-amt,
+.pf-pnl-cell.pos .pf-pnl-pct { color: var(--success); }
+
+.pf-pnl-cell.neg .pf-pnl-amt,
+.pf-pnl-cell.neg .pf-pnl-pct { color: var(--danger); }
+
 /* Symbol badge */
 .pf-sym-badge {
   display: inline-flex;
@@ -417,11 +449,10 @@
 
 /* ── Mobile overrides ── */
 @media (max-width: 768px) {
-  .pf-fx-bar {
+  .pf-toolbar {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding: 10px 12px;
   }
 
   .pf-macros-row {

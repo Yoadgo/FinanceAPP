@@ -33,6 +33,7 @@ const App = (() => {
   let dataStatus = "idle"; // idle | loading | live | error
   let _lastErrorMsg = null;
   let _progressTimer = null;
+  let _fxRateValue = null;
 
   /* ---- INIT ---- */
   function init() {
@@ -110,6 +111,11 @@ const App = (() => {
 
       <!-- Actions -->
       <div class="topbar-actions">
+        <div class="topbar-fx" id="topbar-fx" style="display:none">
+          <span class="topbar-fx-label">USD/ILS</span>
+          <span id="topbar-fx-val">—</span>
+        </div>
+
         <div class="status-pill" id="data-status-pill">
           <span class="status-dot" id="status-dot"></span>
           <span id="status-text">ממתין לנתונים</span>
@@ -131,6 +137,9 @@ const App = (() => {
 
     mobileBtn?.addEventListener("click", toggleMobileSidebar);
     document.getElementById("refresh-btn")?.addEventListener("click", refreshData);
+
+    // Restore FX rate if already known
+    if (_fxRateValue) _applyFxRate(_fxRateValue);
   }
 
   /* ---- CONTENT ---- */
@@ -244,6 +253,21 @@ const App = (() => {
     // null / idle → bar stays hidden (className = "")
   }
 
+  /* ---- FX RATE (topbar chip) ---- */
+  function _applyFxRate(rate) {
+    const el  = document.getElementById("topbar-fx");
+    const val = document.getElementById("topbar-fx-val");
+    if (!el || !val || !rate) return;
+    val.textContent = `₪${rate.toFixed(3)}`;
+    el.style.display = "flex";
+  }
+
+  function setFxRate(rate) {
+    if (!rate) return;
+    _fxRateValue = rate;
+    _applyFxRate(rate);
+  }
+
   /* ---- DATA REFRESH ---- */
   function refreshData() {
     DataService.clearCache();
@@ -307,7 +331,7 @@ const App = (() => {
     });
   }
 
-  return { init, navigateTo, setDataStatus };
+  return { init, navigateTo, setDataStatus, setFxRate };
 })();
 
 /* ===== PAGES REGISTRY ===== */
