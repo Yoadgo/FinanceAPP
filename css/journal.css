@@ -9,17 +9,59 @@
   padding-top: 4px;
   padding-bottom: 10px;
   margin-bottom: 4px;
-  /* Hairline shadow so it visually "lifts" above scrolling table rows */
   box-shadow: 0 4px 10px -2px rgba(0,0,0,0.06);
 }
 
-/* ── Filter bar ── */
+/* ── Filter bar (date + portfolio + search — all one row) ── */
 .journal-filters {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+}
+
+/* Thin vertical separator between date group and portfolio buttons */
+.filter-separator {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+/* Search box — pushed to end via margin-right: auto in RTL */
+.journal-search {
+  margin-right: auto;
+  position: relative;
+  min-width: 150px;
+  max-width: 220px;
+}
+
+.journal-search input {
+  width: 100%;
+  padding: 6px 32px 6px 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  outline: none;
+  transition: var(--transition);
+  font-family: inherit;
+  direction: rtl;
+}
+
+.journal-search input:focus { border-color: var(--border-focus); }
+.journal-search input::placeholder { color: var(--text-muted); }
+
+.journal-search .search-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
 }
 
 .date-filter-group {
@@ -56,57 +98,7 @@
   font-weight: 600;
 }
 
-/* Search box */
-.journal-search {
-  flex: 1;
-  min-width: 160px;
-  max-width: 280px;
-  position: relative;
-}
-
-.journal-search input {
-  width: 100%;
-  padding: 7px 12px 7px 34px;
-  font-size: 13px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  outline: none;
-  transition: var(--transition);
-  font-family: inherit;
-  direction: rtl;
-}
-
-.journal-search input:focus { border-color: var(--border-focus); }
-.journal-search input::placeholder { color: var(--text-muted); }
-
-.journal-search .search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-/* Category select */
-.journal-cat-select {
-  padding: 7px 12px;
-  font-size: 12.5px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  outline: none;
-  cursor: pointer;
-  font-family: inherit;
-  direction: rtl;
-}
-
-.journal-cat-select:focus { border-color: var(--border-focus); }
-
-/* ── Generic pill-button row ── */
+/* ── Portfolio pill buttons ── */
 .filter-btn-row {
   display: flex;
   flex-wrap: wrap;
@@ -142,64 +134,11 @@
   font-weight: 600;
 }
 
-/* Sub-category variant — slightly smaller */
-.filter-btn.filter-btn-sub {
-  font-size: 11.5px;
-  padding: 3px 10px;
-  opacity: 0.8;
-}
-.filter-btn.filter-btn-sub:hover { opacity: 1; }
-.filter-btn.filter-btn-sub.active { opacity: 1; }
-
-/* Sub-category row indentation */
-.subcat-row {
-  padding-right: 4px;
-  border-right: 2px solid var(--border);
-  margin-right: 2px;
-  margin-bottom: 6px;
-}
-
-/* Portfolio row */
-.port-row { margin-top: 2px; }
-
-/* ── Sort controls ── */
-.sort-group {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-right: auto;   /* push to the far (left) end in RTL */
-}
-
+/* Inline label next to portfolio buttons */
 .sort-label {
   font-size: 11.5px;
   color: var(--text-muted);
   white-space: nowrap;
-}
-
-.sort-btn {
-  padding: 5px 11px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: var(--transition);
-  font-family: inherit;
-  white-space: nowrap;
-}
-
-.sort-btn:hover {
-  background: var(--bg-subtle);
-  color: var(--text-primary);
-}
-
-.sort-btn.active {
-  border-color: var(--accent);
-  color: var(--text-primary);
-  background: var(--bg-subtle);
-  font-weight: 600;
 }
 
 /* Stats bar */
@@ -217,7 +156,14 @@
   font-weight: 600;
 }
 
-/* ── Table ── */
+/* Shown when a column filter is active */
+.filter-active-note {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* ── Table wrapper ── */
 .journal-table-wrap {
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -238,7 +184,7 @@
 }
 
 .journal-table th {
-  padding: 10px 14px;
+  padding: 8px 14px;
   text-align: right;
   font-size: 11px;
   font-weight: 600;
@@ -248,17 +194,233 @@
   white-space: nowrap;
 }
 
-.journal-table th.col-num   { width: 44px;  text-align: center; }
-.journal-table th.col-date  { width: 80px; }
-.journal-table th.col-cat   { width: 120px; }
-.journal-table th.col-sym   { width: 68px; }
-.journal-table th.col-port  { width: 90px; }
-.journal-table th.col-qty   { width: 72px;  text-align: left; }
-.journal-table th.col-comm  { width: 78px;  text-align: left; }
-.journal-table th.col-tax   { width: 68px;  text-align: left; }
-.journal-table th.col-amt   { width: 100px; text-align: left; }
-/* col-desc gets whatever space is left */
+.journal-table th.col-num    { width: 40px;  text-align: center; }
+.journal-table th.col-date   { width: 76px; }
+.journal-table th.col-cat    { width: 84px; }
+.journal-table th.col-subcat { width: 110px; }
+.journal-table th.col-sym    { width: 68px; }
+.journal-table th.col-port   { width: 82px; }
+.journal-table th.col-qty    { width: 68px;  text-align: left; }
+.journal-table th.col-comm   { width: 72px;  text-align: left; }
+.journal-table th.col-tax    { width: 64px;  text-align: left; }
+.journal-table th.col-amt    { width: 96px;  text-align: left; }
+/* col-desc fills remaining space — kept narrow */
 
+/* ── Column-header Excel-style controls ── */
+
+/* Flex wrapper inside each sortable th */
+.th-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Sort button (wraps label text + direction arrow) */
+.th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: color 0.12s;
+}
+
+.th-sort-btn:hover        { color: var(--text-primary); }
+.th-sort-btn.th-sort-active { color: var(--text-primary); }
+
+/* Funnel filter button */
+.th-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.th-filter-btn:hover {
+  background: var(--bg-page);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* Highlighted when a filter is applied to this column */
+.th-filter-btn.th-filter-active {
+  background: rgba(37,99,235,0.10);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Column-filter popup ── */
+.col-filter-popup {
+  position: fixed;
+  z-index: 9999;
+  min-width: 185px;
+  max-width: 240px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08);
+  overflow: hidden;
+  font-size: 12.5px;
+  direction: rtl;
+}
+
+/* Popup header */
+.cfp-title {
+  padding: 9px 12px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+/* Sort-direction buttons */
+.cfp-sort-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+}
+
+.cfp-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: var(--transition);
+  width: 100%;
+  text-align: right;
+}
+
+.cfp-sort-btn:hover    { background: var(--bg-subtle); color: var(--text-primary); }
+.cfp-sort-btn.active   { background: var(--sidebar-bg); color: var(--accent); font-weight: 600; }
+
+/* Horizontal divider between sort section and checkbox list */
+.cfp-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 8px;
+}
+
+/* "Select all" checkbox row */
+.cfp-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.cfp-select-all:hover { background: var(--bg-subtle); }
+
+/* Scrollable list of value checkboxes */
+.cfp-items {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 2px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+.cfp-items::-webkit-scrollbar { width: 4px; }
+.cfp-items::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.cfp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.cfp-item:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
+.cfp-item input[type="checkbox"],
+.cfp-select-all input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+/* Footer with OK / Clear buttons */
+.cfp-footer {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.cfp-ok,
+.cfp-clear {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  border: 1px solid var(--border);
+}
+
+.cfp-ok {
+  background: var(--sidebar-bg);
+  border-color: var(--sidebar-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cfp-ok:hover { filter: brightness(0.94); }
+
+.cfp-clear {
+  background: none;
+  color: var(--text-muted);
+}
+
+.cfp-clear:hover {
+  background: var(--bg-page);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* ── Table body ── */
 .journal-table tbody tr {
   border-bottom: 1px solid var(--border);
   transition: background 0.12s;
@@ -293,12 +455,15 @@
   white-space: nowrap;
 }
 
+.journal-table td.col-subcat {
+  white-space: nowrap;
+}
+
 .journal-table td.col-desc {
   color: var(--text-secondary);
   font-size: 12.5px;
-  /* Last column — fixed max-width with ellipsis */
-  max-width: 260px;
-  min-width: 160px;
+  max-width: 160px;
+  min-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -334,7 +499,17 @@
 .amt-negative { color: var(--danger); }
 .amt-neutral  { color: var(--text-muted); }
 
-/* Category badge */
+/* Parent category badge (simpler — no icon) */
+.parent-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Sub-category badge (with icon) */
 .cat-badge {
   display: inline-flex;
   align-items: center;
@@ -382,12 +557,14 @@
 }
 
 .pg-btn:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
 .pg-btn.active {
   background: var(--sidebar-bg);
   border-color: var(--sidebar-bg);
   color: var(--accent);
   font-weight: 600;
 }
+
 .pg-btn:disabled { opacity: 0.35; cursor: default; }
 
 /* ── Loading / Empty ── */
@@ -406,13 +583,13 @@
   .journal-table th.col-comm,
   .journal-table th.col-tax,
   .journal-table th.col-desc,
+  .journal-table th.col-subcat,
   .journal-table td.col-qty,
   .journal-table td.col-comm,
   .journal-table td.col-tax,
-  .journal-table td.col-desc { display: none; }
+  .journal-table td.col-desc,
+  .journal-table td.col-subcat { display: none; }
 
   .journal-table th.col-port,
   .journal-table td.col-port { display: none; }
-
-  .journal-search { max-width: 100%; }
 }
