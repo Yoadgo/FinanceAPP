@@ -49,17 +49,17 @@ html, body {
 }
 
 .logo-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
-  background: var(--accent);
   display: flex;
   align-items: center;
-  justify-content: center;
   flex-shrink: 0;
 }
 
-.logo-icon svg { color: #1B1F26; }
+.logo-icon img {
+  height: 38px;
+  width: auto;
+  max-width: 160px;
+  object-fit: contain;
+}
 
 .logo-text {
   font-size: 14px;
@@ -81,6 +81,23 @@ html, body {
 
 #sidebar.collapsed .logo-text,
 #sidebar.collapsed .logo-sub { opacity: 0; width: 0; overflow: hidden; }
+
+#sidebar.collapsed .sidebar-logo {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+#sidebar.collapsed .logo-icon {
+  justify-content: center;
+  width: 100%;
+}
+
+#sidebar.collapsed .logo-icon img {
+  height: 42px;
+  width: auto;
+  max-width: 56px;
+}
 
 /* ── Nav ── */
 .sidebar-nav {
