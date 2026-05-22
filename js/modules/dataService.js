@@ -141,5 +141,18 @@ const DataService = (() => {
     return health?.fx?.rate ?? null;
   }
 
-  return { getHealth, getTransactions, getStockHistory, getFxRate, clearCache };
+  /* ---- Public: real-time stock prices (from REALTIMEDATA sheet) ---- */
+  async function getRealTimeData() {
+    const cacheKey = "realtime";
+    const now = Date.now();
+    const RT_TTL = 60 * 1000; // 1 min — real-time data refreshes often
+    if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < RT_TTL) return _cache[cacheKey];
+    const data = await _fetch({ resource: "realtime" });
+    const rows = _toObjects(data.values);
+    _cache[cacheKey]     = rows;
+    _lastFetch[cacheKey] = now;
+    return rows;
+  }
+
+  return { getHealth, getTransactions, getStockHistory, getFxRate, getRealTimeData, clearCache };
 })();

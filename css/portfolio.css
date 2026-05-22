@@ -1,0 +1,450 @@
+/* ===== PORTFOLIO PAGE ===== */
+
+/* ── Loading state ── */
+.pf-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: 10px;
+}
+
+/* ── FX Bar ── */
+.pf-fx-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+
+.pf-fx-rate {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.pf-fx-val {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+
+.pf-fx-src {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.pf-curr-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf-toggle-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pf-curr-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.pf-curr-btn:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
+.pf-curr-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-surface);
+  border-color: var(--text-primary);
+}
+
+/* ── Macro Cards ── */
+.pf-macros-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pf-macro-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pf-macro-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.pf-macro-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Roboto Mono', monospace;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.pf-macro-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── Portfolio Filter Bar ── */
+.pf-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.pf-filter-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.pf-port-btn {
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.pf-port-btn:hover { background: var(--bg-subtle); color: var(--text-primary); }
+
+.pf-port-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-surface);
+  border-color: var(--text-primary);
+}
+
+/* ── Charts Row ── */
+.pf-charts-row {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pf-chart-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 210px;
+  overflow: hidden;
+}
+
+.pf-chart-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* Bar chart */
+.pf-bar-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  flex: 1;
+}
+
+.pf-bar-scroll::-webkit-scrollbar { height: 4px; }
+.pf-bar-scroll::-webkit-scrollbar-track { background: transparent; }
+.pf-bar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.pf-bar-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pf-leg-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+/* Pie chart */
+.pf-pie-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.pf-pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  max-height: 150px;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-pie-legend::-webkit-scrollbar { display: none; }
+
+.pf-pie-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.pf-pie-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pf-pie-sym {
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 40px;
+}
+
+.pf-pie-pct {
+  color: var(--text-muted);
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11.5px;
+}
+
+/* ── Holdings Table ── */
+.pf-table-wrap {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.pf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pf-table thead {
+  background: var(--bg-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.pf-table th {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: right;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.pf-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+
+.pf-table tbody tr:last-child { border-bottom: none; }
+.pf-table tbody tr:hover { background: var(--bg-subtle); }
+
+.pf-table td {
+  padding: 10px 14px;
+  text-align: right;
+  vertical-align: middle;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.pf-td-num {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12.5px;
+}
+
+.pf-td-bold { font-weight: 600; }
+
+.pf-td-muted { color: var(--text-muted); font-size: 12px; }
+
+/* Symbol badge */
+.pf-sym-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  background: rgba(37,99,235,0.08);
+  color: #2563EB;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: 'Roboto Mono', monospace;
+}
+
+/* Price + change badge */
+.pf-price-val {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12.5px;
+  margin-left: 6px;
+}
+
+.pf-chg-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Roboto Mono', monospace;
+}
+
+.pf-chg-badge.pos { color: var(--success); background: rgba(30,142,62,0.09); }
+.pf-chg-badge.neg { color: var(--danger);  background: rgba(217,48,37,0.09);  }
+
+/* P&L cells */
+.pf-td-pnl {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.pf-td-pnl.pos { color: var(--success); }
+.pf-td-pnl.neg { color: var(--danger);  }
+
+/* ── No data ── */
+.pf-no-data {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  padding: 28px 16px;
+}
+
+/* ── Mobile Cards ── */
+.pf-cards { display: none; }
+
+.pf-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+
+.pf-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pf-card-port {
+  margin-right: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.pf-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.pf-card-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.pf-card-lbl {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ── Mobile overrides ── */
+@media (max-width: 768px) {
+  .pf-fx-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .pf-macros-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pf-macros-row .pf-macro-card:last-child {
+    grid-column: span 2;
+  }
+
+  .pf-macro-value { font-size: 18px; }
+
+  .pf-charts-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pf-chart-card { min-height: 180px; }
+
+  .pf-table-wrap { display: none; }
+  .pf-cards { display: flex; flex-direction: column; gap: 10px; }
+}
+
+@media (max-width: 480px) {
+  .pf-macros-row { grid-template-columns: 1fr; }
+  .pf-macros-row .pf-macro-card:last-child { grid-column: span 1; }
+}
