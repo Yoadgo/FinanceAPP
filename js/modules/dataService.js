@@ -4,7 +4,9 @@ const DataService = (() => {
 
   const API_URL = "https://script.google.com/macros/s/AKfycbz9uDnRY0UWQo1gSwAeW9Pfg0TmHxZVYlxBW389wcn54bnF7KK5L8MNfmUcdy196MMcyA/exec";
 
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const CACHE_TTL    = 5  * 60 * 1000; // 5 min  — in-memory
+  const LS_TTL       = 30 * 60 * 1000; // 30 min — localStorage
+  const LS_KEY_TXN   = 'fapp_txn_v1';  // bump version string to bust stale schema
   let _cache = {};
   let _lastFetch = {};
 
@@ -17,16 +19,32 @@ const DataService = (() => {
     const text = await res.text();
     if (text.trim().startsWith("<")) throw new Error("Received HTML — check Apps Script permissions.");
     const data = JSON.parse(text);
-    if (data.status === "error") throw new Error(data.message || "API Error");
+    // Handle both {status:"error", message:"..."} and {ok:false, error:"..."}
+    if (data.status === "error" || data.ok === false) {
+      throw new Error(data.message || data.error || "API Error");
+    }
     return data;
   }
 
-  /* ---- Convert 2D array → array of objects ---- */
+  /* ---- Convert 2D array → array of objects ----
+     Google Sheets returns numeric cells as JS numbers and date cells as
+     JS Date objects. Stringify everything so downstream code never gets
+     a non-string where it expects one (.trim / .toLowerCase / etc.). */
   function _toObjects(values) {
     if (!values || values.length < 2) return [];
     const headers = values[0];
     return values.slice(1).map(row =>
-      Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""]))
+      Object.fromEntries(headers.map((h, i) => {
+        const v = row[i] ?? "";
+        if (v instanceof Date) {
+          // Format as YYYY-MM-DD so new Date(str) parses reliably
+          const y = v.getFullYear();
+          const m = String(v.getMonth() + 1).padStart(2, '0');
+          const d = String(v.getDate()).padStart(2, '0');
+          return [h, `${y}-${m}-${d}`];
+        }
+        return [h, String(v)];
+      }))
     );
   }
 
@@ -41,17 +59,56 @@ const DataService = (() => {
     return data;
   }
 
-  /* ---- Public: transactions ---- */
+  /* ---- Persist rows to localStorage ---- */
+  function _lsSave(rows) {
+    try { localStorage.setItem(LS_KEY_TXN, JSON.stringify({ ts: Date.now(), rows })); } catch (_) {}
+  }
+
+  /* ---- Background refresh (silent — updates cache only, no UI change) ---- */
+  async function _bgRefresh() {
+    try {
+      const data = await _fetch({ resource: "transactions" });
+      const rows = _toObjects(data.values);
+      _cache["transactions"]    = rows;
+      _lastFetch["transactions"] = Date.now();
+      _lsSave(rows);
+    } catch (_) { /* ignore — user has cached data */ }
+  }
+
+  /* ---- Public: transactions ----
+     Layer 1 (fastest) : in-memory cache   — valid for 5 min
+     Layer 2 (fast)    : localStorage      — valid for 30 min; triggers bg refresh if >5 min old
+     Layer 3 (slow)    : network fetch     — falls back if both caches miss or expired          */
   async function getTransactions() {
     const cacheKey = "transactions";
     const now = Date.now();
-    if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < CACHE_TTL) return _cache[cacheKey];
-    // Apps Script converts resource name to lowercase automatically — "transactions" and "Transactions" are identical.
-    // getDataRange().getValues() returns ALL rows (no server-side limit).
+
+    // Layer 1: in-memory
+    if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < CACHE_TTL) {
+      return _cache[cacheKey];
+    }
+
+    // Layer 2: localStorage (instant — data from previous session / page refresh)
+    try {
+      const stored = localStorage.getItem(LS_KEY_TXN);
+      if (stored) {
+        const { ts, rows } = JSON.parse(stored);
+        if (rows && Array.isArray(rows) && (now - ts) < LS_TTL) {
+          _cache[cacheKey]    = rows;
+          _lastFetch[cacheKey] = ts;
+          // If older than in-memory TTL, silently refresh behind the scenes
+          if (now - ts > CACHE_TTL) _bgRefresh();
+          return rows;
+        }
+      }
+    } catch (_) { /* localStorage unavailable or data corrupt — fall through to network */ }
+
+    // Layer 3: network fetch
     const data = await _fetch({ resource: "transactions" });
     const rows = _toObjects(data.values);
-    _cache[cacheKey] = rows;
-    _lastFetch[cacheKey] = now;
+    _cache[cacheKey]    = rows;
+    _lastFetch[cacheKey] = Date.now();
+    _lsSave(rows);
     return rows;
   }
 
@@ -69,8 +126,13 @@ const DataService = (() => {
 
   /* ---- Public: clear cache ---- */
   function clearCache(key) {
-    if (key) { delete _cache[key]; delete _lastFetch[key]; }
-    else { _cache = {}; _lastFetch = {}; }
+    if (key) {
+      delete _cache[key]; delete _lastFetch[key];
+      if (key === 'transactions') try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
+    } else {
+      _cache = {}; _lastFetch = {};
+      try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
+    }
   }
 
   /* ---- Public: current USD/ILS rate ---- */

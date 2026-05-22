@@ -16,6 +16,9 @@
 </head>
 <body>
 
+<!-- Progress bar (fixed, above everything) -->
+<div id="app-progress"><div class="progress-fill"></div></div>
+
 <div id="app">
 
   <!-- Sidebar -->
@@ -32,17 +35,17 @@
 
 </div>
 
-<!-- JS Modules (order matters) -->
+<!-- 1. Modules (utilities, data, logic) -->
 <script src="js/modules/navigation.js"></script>
 <script src="js/modules/dataService.js"></script>
 <script src="js/modules/classifier.js"></script>
 
-<!-- Pages (loaded individually — each page is its own file) -->
+<!-- 2. App shell — defines Pages={} and App before any page registers itself -->
+<script src="js/app.js"></script>
+
+<!-- 3. Pages — each file registers itself into Pages{} -->
 <!-- <script src="js/components/dashboard.js"></script> -->
 <script src="js/components/journal.js"></script>
-
-<!-- App bootstrap -->
-<script src="js/app.js"></script>
 
 </body>
 </html>

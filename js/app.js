@@ -7,6 +7,8 @@ const App = (() => {
   let sidebarCollapsed = false;
   let mobileSidebarOpen = false;
   let dataStatus = "idle"; // idle | loading | live | error
+  let _lastErrorMsg = null;
+  let _progressTimer = null;
 
   /* ---- INIT ---- */
   function init() {
@@ -182,24 +184,75 @@ const App = (() => {
     document.getElementById("overlay").classList.remove("visible");
   }
 
+  /* ---- PROGRESS BAR ---- */
+  function _setProgress(state) {
+    const bar = document.getElementById("app-progress");
+    if (!bar) return;
+    clearTimeout(_progressTimer);
+
+    bar.className = "";          // reset all classes
+
+    if (state === "loading") {
+      bar.classList.add("visible", "loading");
+    } else if (state === "success") {
+      bar.classList.add("visible", "success");
+      _progressTimer = setTimeout(() => { bar.className = ""; }, 900);
+    } else if (state === "error") {
+      bar.classList.add("visible", "error");
+    }
+    // null / idle → bar stays hidden (className = "")
+  }
+
   /* ---- DATA REFRESH ---- */
   function refreshData() {
     DataService.clearCache();
     setDataStatus("loading");
     renderContent(currentPage);
-    setTimeout(() => setDataStatus("idle"), 1200); // will be replaced by real fetch callbacks
   }
 
-  function setDataStatus(status) {
+  /* ---- STATUS PILL ---- */
+  function setDataStatus(status, errorMsg) {
     dataStatus = status;
-    const dot = document.getElementById("status-dot");
+    _lastErrorMsg = errorMsg || null;
+
+    const dot  = document.getElementById("status-dot");
     const text = document.getElementById("status-text");
+    const pill = document.getElementById("data-status-pill");
     if (!dot || !text) return;
+
     dot.className = "status-dot";
-    if (status === "live")    { dot.classList.add("live");  text.textContent = "נתונים עדכניים"; }
-    else if (status === "error") { dot.classList.add("error"); text.textContent = "שגיאת חיבור"; }
-    else if (status === "loading") { text.textContent = "טוען נתונים..."; }
-    else { text.textContent = "ממתין לנתונים"; }
+
+    // Remove any existing tooltip and error class
+    const oldTip = pill?.querySelector(".error-tooltip");
+    if (oldTip) oldTip.remove();
+    pill?.classList.remove("has-error");
+
+    if (status === "live") {
+      dot.classList.add("live");
+      text.textContent = "נתונים עדכניים";
+      _setProgress("success");
+
+    } else if (status === "error") {
+      dot.classList.add("error");
+      text.textContent = "שגיאת חיבור";
+      _setProgress("error");
+      if (pill && _lastErrorMsg) {
+        pill.classList.add("has-error");
+        const tip = document.createElement("div");
+        tip.className = "error-tooltip";
+        tip.innerHTML = `<strong style="display:block;margin-bottom:4px;color:var(--danger)">שגיאת חיבור</strong>${_lastErrorMsg}`;
+        pill.appendChild(tip);
+      }
+
+    } else if (status === "loading") {
+      dot.classList.add("loading");
+      text.textContent = "טוען נתונים...";
+      _setProgress("loading");
+
+    } else {
+      text.textContent = "ממתין לנתונים";
+      _setProgress(null);
+    }
   }
 
   /* ---- GLOBAL EVENTS ---- */

@@ -1,27 +1,25 @@
 /* ================================================================
-   TRANSACTION CLASSIFIER  v2
+   TRANSACTION CLASSIFIER  v3
    ----------------------------------------------------------------
    Input : a single row-object from the Transactions sheet
    Output: { category, subCategory, label }
 
-   Verified against live data (792 rows, 12 Type values).
-
    KEY FINDINGS from data audit:
-   - "הפקדה"        → ALWAYS a tax-bond provision (TotalILS=0, numeric symbol)
-                      NOT a cash deposit.
-   - "משיכה"        → ALWAYS a tax payment ("מס לשלם", symbol 9993983)
-                      NOT a cash withdrawal to bank.
-   - "העברה מזומן בשח" → the REAL cash deposits (44 rows, all positive).
+   - "הפקדה"           → ALWAYS a tax-bond provision (TotalILS=0, numeric symbol)
+   - "משיכה"           → ALWAYS a tax payment ("מס לשלם") OR a debit-interest charge
+   - "העברה מזומן בשח" → the REAL cash deposits (positive transfers from bank)
+   - "הטבה"            → split or bonus shares (corporate action, no cash value)
+   - "ר. חובה" / "ר.חובה" in Name → debit interest charged on credit/margin
    ================================================================ */
 
 const Classifier = (() => {
 
   /* ── Helpers ── */
-  const clean = v  => (v  || '').toString().trim();
-  const num   = v  => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
+  const clean = v => (v || '').toString().trim();
+  const num   = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
   const has   = (str, ...words) => words.some(w => str.includes(w));
 
-  /* Stock ticker = 1–5 capital letters only (TSLA, NOW, QQQ…)
+  /* Stock ticker = 1–5 capital letters (TSLA, NOW, QQQ…)
      Numeric codes like 9993983 / 9992985 / 99028 are broker/tax instruments. */
   const isStockTicker = sym => /^[A-Z]{1,5}$/.test(sym);
   const isNumericCode = sym => /^\d{3,}$/.test(sym);
@@ -29,18 +27,23 @@ const Classifier = (() => {
   /* ── Human-readable labels ── */
   const LABELS = {
     STOCKS: {
-      BUY_STOCK:  'קניית מניה',
-      SELL_STOCK: 'מכירת מניה',
+      BUY_STOCK:        'קניית מניה',
+      SELL_STOCK:       'מכירת מניה',
     },
     CASH: {
-      DEPOSIT:        'הפקדת מזומן',
-      CASH_DIVIDEND:  'דיבידנד',
-      INTEREST:       'ריבית',
-      FX_CONVERSION:  'המרת מט"ח',
+      DEPOSIT:          'הפקדת מזומן',
+      CASH_DIVIDEND:    'דיבידנד',
+      FX_CONVERSION:    'המרת מט"ח',
+      SPLIT:            'פיצול מניות',   // corporate action — no monetary value
+      BONUS:            'בונוס מניות',   // corporate action
+    },
+    INTEREST: {
+      CREDIT_INTEREST:  'ריבית זכות',
     },
     FEES: {
-      TRADE_COMMISSION: 'עמלת מסחר',   // extracted from Commission field, not a separate row
+      TRADE_COMMISSION: 'עמלת מסחר',
       MGMT_FEE:         'דמי ניהול',
+      DEBIT_INTEREST:   'ריבית חובה',   // interest charged on credit/margin — a cost
     },
     TAXES: {
       CAPITAL_GAIN_TAX: 'מס רווח הון',
@@ -48,10 +51,6 @@ const Classifier = (() => {
       TAX_PROVISION:    'עתודת מס (מגן מס)',
       TAX_PAYMENT:      'תשלום מס',
       TAX_REFUND:       'זיכוי מס',
-    },
-    BONUS: {
-      SPLIT: 'פיצול מניות',
-      BONUS: 'בונוס מניות',
     },
     UNCLASSIFIED: {
       UNKNOWN: 'לא מסווג',
@@ -63,15 +62,14 @@ const Classifier = (() => {
     const type      = clean(row.Type);
     const nameLower = clean(row.Name).toLowerCase();
     const symbol    = clean(row.Symbol);
-    const totalILS  = num(row.TotalILS);
     const qty       = num(row.Qty);
     const price     = num(row.ExecutionRate);
 
     let category, subCategory;
 
-    /* ---- FX CONVERSION (must be checked BEFORE stocks) ----
-       קניה שח / מכירה שח with a numeric symbol = currency trade (e.g. buying USD with ILS).
-       Name contains "USD/ILS" or "ILS" and symbol is a broker FX code like 99028. */
+    /* ---- FX CONVERSION (check BEFORE stocks) --------------------------------
+       קניה שח / מכירה שח with a numeric symbol = ILS↔USD currency trade.
+       Symbol is a broker FX instrument code (e.g. 99028), not a stock ticker. */
     if ((type === 'קניה שח' || type === 'מכירה שח') && isNumericCode(symbol)) {
       [category, subCategory] = ['CASH', 'FX_CONVERSION'];
     }
@@ -84,10 +82,11 @@ const Classifier = (() => {
       [category, subCategory] = ['STOCKS', 'SELL_STOCK'];
     }
 
-    /* ---- BONUS / SPLITS ---- */
-    // הטבה = broker bonus; if stock ticker + qty > 0 + price = 0 → split
+    /* ---- CORPORATE ACTIONS (under CASH — no independent monetary value) ----
+       הטבה = broker bonus / share split.
+       Split: stock ticker + qty > 0 + price = 0.  Bonus: everything else.     */
     else if (type === 'הטבה') {
-      category    = 'BONUS';
+      category    = 'CASH';
       subCategory = (isStockTicker(symbol) && qty > 0 && price === 0) ? 'SPLIT' : 'BONUS';
     }
 
@@ -95,34 +94,42 @@ const Classifier = (() => {
     else if (type === 'הפקדה דיבידנד מטח') {
       [category, subCategory] = ['CASH', 'CASH_DIVIDEND'];
     }
-    else if (type === 'משיכת ריבית מטח') {
-      [category, subCategory] = ['CASH', 'INTEREST'];
-    }
-    // העברה מזומן בשח = actual cash deposit from bank (all 44 rows are positive transfers in)
     else if (type === 'העברה מזומן בשח') {
       [category, subCategory] = ['CASH', 'DEPOSIT'];
     }
 
-    /* ---- TAXES ---- */
-    // הפקדה: broker sets aside money into a tax-bond (מגן מס / מס עתידי).
-    // TotalILS is always 0 — no fresh cash arrives; it's a tax-escrow provision.
-    else if (type === 'הפקדה') {
-      category    = 'TAXES';
-      subCategory = 'TAX_PROVISION';
+    /* ---- INTEREST ---- */
+    else if (type === 'משיכת ריבית מטח') {
+      [category, subCategory] = ['INTEREST', 'CREDIT_INTEREST'];
     }
 
-    // משיכה: actual tax payment ("מס לשלם") — broker redeems the tax-bond and pays the tax.
+    /* ---- FEES (includes debit interest — a cost charged by the broker) ---- */
+    else if (type === 'ריבית חובה מטח') {
+      [category, subCategory] = ['FEES', 'DEBIT_INTEREST'];
+    }
+    else if (type === 'דמי טפול מזומן בשח') {
+      [category, subCategory] = ['FEES', 'MGMT_FEE'];
+    }
+
+    /* ---- TAXES ---- */
+    // הפקדה: broker parks money in a tax-bond (מגן מס). TotalILS=0 always.
+    else if (type === 'הפקדה') {
+      [category, subCategory] = ['TAXES', 'TAX_PROVISION'];
+    }
+
+    // משיכה: either a tax payment OR a debit-interest charge on credit.
+    // Must check Name to distinguish them.
     else if (type === 'משיכה') {
-      if (has(nameLower, 'מס לשלם', 'מס לשלם')) {
+      if (has(nameLower, 'מס לשלם')) {
         [category, subCategory] = ['TAXES', 'TAX_PAYMENT'];
+      } else if (has(nameLower, 'ר. חובה', 'ר.חובה', 'ריבית חובה')) {
+        [category, subCategory] = ['FEES', 'DEBIT_INTEREST'];
       } else {
-        // Safety net for any future withdrawal type we haven't seen yet
         [category, subCategory] = ['UNCLASSIFIED', 'UNKNOWN'];
       }
     }
 
-    // משיכת מס חול מטח: foreign tax deducted at source.
-    // Distinguish dividend tax vs capital-gains tax by Name prefix "מסח/" = מס חו"ל
+    // משיכת מס חול מטח: foreign withholding tax deducted at source.
     else if (type === 'משיכת מס חול מטח') {
       category    = 'TAXES';
       subCategory = has(nameLower, 'דיב', 'div', 'dividend')
@@ -130,9 +137,13 @@ const Classifier = (() => {
         : 'CAPITAL_GAIN_TAX';
     }
 
-    /* ---- FEES ---- */
-    else if (type === 'דמי טפול מזומן בשח') {
-      [category, subCategory] = ['FEES', 'MGMT_FEE'];
+    /* ---- Name-based fallbacks (catch rows whose Type wasn't listed above) ----
+       Must come AFTER all type-based rules.                                      */
+    else if (has(nameLower, 'ר. חובה', 'ר.חובה', 'ריבית חובה')) {
+      [category, subCategory] = ['FEES', 'DEBIT_INTEREST'];
+    }
+    else if (has(nameLower, 'ר. זכות', 'ר.זכות', 'ריבית זכות')) {
+      [category, subCategory] = ['INTEREST', 'CREDIT_INTEREST'];
     }
 
     /* ---- UNCLASSIFIED (safety net) ---- */

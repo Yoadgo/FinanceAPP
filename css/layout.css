@@ -231,6 +231,58 @@ html, body {
   gap: 8px;
 }
 
+/* ===== PROGRESS BAR ===== */
+#app-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 9999;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+#app-progress.visible { opacity: 1; }
+
+#app-progress .progress-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  left: -35%;
+}
+
+#app-progress.loading .progress-fill {
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+
+#app-progress.success .progress-fill {
+  left: 0;
+  width: 100%;
+  border-radius: 0;
+  background: var(--success);
+  animation: none;
+  transition: width 0.25s ease;
+}
+
+#app-progress.error .progress-fill {
+  left: 0;
+  width: 100%;
+  border-radius: 0;
+  background: var(--danger);
+  animation: none;
+}
+
+@keyframes progress-slide {
+  0%   { left: -35%; }
+  100% { left: 110%; }
+}
+
 /* Status pill */
 .status-pill {
   display: flex;
@@ -242,6 +294,61 @@ html, body {
   padding: 4px 12px;
   font-size: 12px;
   color: var(--text-secondary);
+  position: relative;
+  cursor: default;
+  user-select: none;
+}
+
+.status-pill.has-error { cursor: help; }
+
+/* Error tooltip popover */
+.error-tooltip {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  max-width: 340px;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text-active);
+  border: 1px solid var(--sidebar-border);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  word-break: break-word;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-5px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  direction: rtl;
+  text-align: right;
+}
+
+/* Arrow pointing up */
+.error-tooltip::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  right: 18px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--sidebar-border);
+}
+
+.error-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 1px);
+  right: 18px;
+  border: 5px solid transparent;
+  border-bottom-color: var(--sidebar-bg);
+}
+
+.status-pill.has-error:hover .error-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .status-dot {
