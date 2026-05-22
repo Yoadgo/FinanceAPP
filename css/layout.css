@@ -385,6 +385,43 @@ html, body {
   50%       { opacity: 0.35; }
 }
 
+/* Topbar currency toggle (USD / ILS) */
+.topbar-curr-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+
+.topbar-curr-btn {
+  padding: 3px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: 'Roboto Mono', monospace;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+.topbar-curr-btn:hover { color: var(--text-primary); }
+
+.topbar-curr-btn.active {
+  background: var(--text-primary);
+  color: var(--bg-surface);
+}
+
+@media (max-width: 768px) {
+  .topbar-curr-toggle { display: none; }
+}
+
 /* Topbar FX rate chip */
 .topbar-fx {
   align-items: center;

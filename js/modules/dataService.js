@@ -141,17 +141,19 @@ const DataService = (() => {
     return health?.fx?.rate ?? null;
   }
 
-  /* ---- Public: real-time stock prices (from REALTIMEDATA sheet) ---- */
+  /* ---- Public: real-time stock prices (from REALTIMEDATA sheet) ----
+     Returns the raw API response { values: [[header,...], [row,...], ...] }
+     so callers can do index-based header scanning (like New1.html) instead
+     of relying on exact column-name matches.                               */
   async function getRealTimeData() {
     const cacheKey = "realtime";
     const now = Date.now();
-    const RT_TTL = 60 * 1000; // 1 min — real-time data refreshes often
+    const RT_TTL = 60 * 1000; // 1 min
     if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < RT_TTL) return _cache[cacheKey];
     const data = await _fetch({ resource: "realtime" });
-    const rows = _toObjects(data.values);
-    _cache[cacheKey]     = rows;
+    _cache[cacheKey]     = data;   // cache raw { values: [[...]] }
     _lastFetch[cacheKey] = now;
-    return rows;
+    return data;
   }
 
   return { getHealth, getTransactions, getStockHistory, getFxRate, getRealTimeData, clearCache };

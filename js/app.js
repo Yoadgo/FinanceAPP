@@ -33,7 +33,8 @@ const App = (() => {
   let dataStatus = "idle"; // idle | loading | live | error
   let _lastErrorMsg = null;
   let _progressTimer = null;
-  let _fxRateValue = null;
+  let _fxRateValue  = null;
+  let _globalCurrency = 'USD';
 
   /* ---- INIT ---- */
   function init() {
@@ -111,6 +112,12 @@ const App = (() => {
 
       <!-- Actions -->
       <div class="topbar-actions">
+        <!-- Currency toggle (USD ⇔ ILS) -->
+        <div class="topbar-curr-toggle" id="topbar-curr-toggle">
+          <button class="topbar-curr-btn${_globalCurrency === 'USD' ? ' active' : ''}" data-curr="USD">$ USD</button>
+          <button class="topbar-curr-btn${_globalCurrency === 'ILS' ? ' active' : ''}" data-curr="ILS">₪ ILS</button>
+        </div>
+
         <div class="topbar-fx" id="topbar-fx" style="display:none">
           <span class="topbar-fx-label">USD/ILS</span>
           <span id="topbar-fx-val">—</span>
@@ -137,6 +144,18 @@ const App = (() => {
 
     mobileBtn?.addEventListener("click", toggleMobileSidebar);
     document.getElementById("refresh-btn")?.addEventListener("click", refreshData);
+
+    // Currency toggle
+    document.querySelectorAll(".topbar-curr-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.curr === _globalCurrency) return;
+        _globalCurrency = btn.dataset.curr;
+        document.querySelectorAll(".topbar-curr-btn").forEach(b =>
+          b.classList.toggle("active", b.dataset.curr === _globalCurrency)
+        );
+        document.dispatchEvent(new CustomEvent("app:currencychange", { detail: _globalCurrency }));
+      });
+    });
 
     // Restore FX rate if already known
     if (_fxRateValue) _applyFxRate(_fxRateValue);
@@ -331,7 +350,9 @@ const App = (() => {
     });
   }
 
-  return { init, navigateTo, setDataStatus, setFxRate };
+  function getCurrency() { return _globalCurrency; }
+
+  return { init, navigateTo, setDataStatus, setFxRate, getCurrency };
 })();
 
 /* ===== PAGES REGISTRY ===== */

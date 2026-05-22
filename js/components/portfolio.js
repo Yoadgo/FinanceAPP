@@ -7,12 +7,14 @@ Pages.portfolio = (() => {
   let _rtMap        = {};
   let _fxRate       = null;
   let _portFilter   = 'all';
-  let _currency     = 'USD';
   let _container    = null;
   let _enrichedTxns = null;
+  let _currHandler  = null;   // app:currencychange listener ref
 
   /* ── Helpers ── */
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
+
+  function _currency() { return App.getCurrency(); }
 
   const PIE_COLORS = [
     '#2563EB','#7C3AED','#059669','#D97706','#EF4444',
@@ -33,56 +35,75 @@ Pages.portfolio = (() => {
     return `${sign}${Math.abs(val).toFixed(2)}%`;
   }
 
-  function currSym() { return _currency === 'ILS' ? '₪' : '$'; }
+  function currSym() { return _currency() === 'ILS' ? '₪' : '$'; }
 
   function toDisplay(usdVal) {
     if (usdVal === null || usdVal === undefined || !isFinite(usdVal)) return null;
-    return (_currency === 'ILS' && _fxRate) ? usdVal * _fxRate : usdVal;
+    return (_currency() === 'ILS' && _fxRate) ? usdVal * _fxRate : usdVal;
   }
 
   /* ═══════════════════════════════════════════════════
      FIFO Position Calculator
-     ── Key by symbol only (global ledger).
-     ── Uses ExecutionRate as cost-per-share; falls back
-        to TotalFX/Qty if ExecutionRate is missing.
-     ── Sells consume the oldest lots first (FIFO).
-     ── Splits adjust all existing lots proportionally.
+     ─────────────────────────────────────────────────
+     KEY RULES (matching New1.html):
+     • Math.abs on Qty + ExecutionRate — sell rows often
+       carry negative quantities; without abs they are
+       skipped entirely, leaving "closed" positions open.
+     • Fallback type detection — if the classifier marks
+       a row UNCLASSIFIED, we re-examine the raw Type
+       field so no trade is silently dropped.
+     • Key by symbol only (global ledger across all portfolios).
      ══════════════════════════════════════════════════ */
   function _computePositions(transactions) {
     const ledger = {};
 
+    /* ── Determine action from classifier result or raw Type ── */
+    function _action(row) {
+      const sub = row.subCategory;
+      if (sub === 'BUY_STOCK')  return 'BUY';
+      if (sub === 'SELL_STOCK') return 'SELL';
+      if (sub === 'SPLIT')      return 'SPLIT';
+      if (sub === 'BONUS')      return 'BONUS';
+      // Fallback: inspect raw Type string directly
+      const t = (row.Type || '').trim().toUpperCase();
+      if (t.includes('קני'))  return 'BUY';
+      if (t.includes('מכיר')) return 'SELL';
+      return null;
+    }
+
     const relevant = transactions
-      .filter(r => ['BUY_STOCK', 'SELL_STOCK', 'SPLIT', 'BONUS'].includes(r.subCategory))
+      .filter(r => _action(r) !== null)
       .sort((a, b) => new Date(a.Date) - new Date(b.Date));
 
     relevant.forEach(row => {
-      const sym = (row.Symbol || '').trim();
+      const sym = (row.Symbol || '').toString().trim().toUpperCase();
       if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
 
-      const rawQty = n(row.Qty);
-      if (rawQty <= 0) return;
+      // *** Math.abs is critical — sell rows arrive with negative Qty ***
+      const rawQty = Math.abs(n(row.Qty));
+      if (!rawQty) return;
 
-      const rawPrice = n(row.ExecutionRate);
-      // Fallback: derive per-share cost from TotalFX when ExecutionRate is absent
+      const rawPrice     = Math.abs(n(row.ExecutionRate));
       const costPerShare = rawPrice > 0
         ? rawPrice
         : (rawQty > 0 ? Math.abs(n(row.TotalFX)) / rawQty : 0);
 
-      const port = (row.Portfolio || '').trim();
+      const port   = (row.Portfolio || '').trim();
+      const action = _action(row);
 
       if (!ledger[sym]) {
         ledger[sym] = { symbol: sym, portfolio: port, qty: 0, lots: [] };
       }
       const item = ledger[sym];
-      if (port) item.portfolio = port; // keep most-recent non-empty portfolio name
+      if (port) item.portfolio = port;
 
-      /* ── BUY: push a new lot ── */
-      if (row.subCategory === 'BUY_STOCK') {
+      /* ── BUY ── */
+      if (action === 'BUY') {
         item.qty += rawQty;
         item.lots.push({ qty: rawQty, costPerShare, date: row.Date });
 
-      /* ── SELL: FIFO consume oldest lots ── */
-      } else if (row.subCategory === 'SELL_STOCK') {
+      /* ── SELL (FIFO) ── */
+      } else if (action === 'SELL') {
         let remaining = rawQty;
         while (remaining > 0.0001 && item.lots.length > 0) {
           if (item.lots[0].qty > remaining) {
@@ -94,13 +115,12 @@ Pages.portfolio = (() => {
           }
         }
         item.qty -= rawQty;
-        if (item.qty < 0) item.qty = 0;
+        if (item.qty < 0.001) item.qty = 0;  // clamp float dust
 
-      /* ── SPLIT: scale existing lots (qty×ratio, cost÷ratio) ── */
-      } else if (row.subCategory === 'SPLIT') {
+      /* ── SPLIT: proportional lot adjustment ── */
+      } else if (action === 'SPLIT') {
         if (item.qty > 0.0001) {
-          const newTotal = item.qty + rawQty;
-          const ratio    = newTotal / item.qty;
+          const ratio = (item.qty + rawQty) / item.qty;
           item.lots.forEach(lot => {
             lot.qty          *= ratio;
             lot.costPerShare /= ratio;
@@ -108,8 +128,8 @@ Pages.portfolio = (() => {
         }
         item.qty += rawQty;
 
-      /* ── BONUS: add shares at zero cost ── */
-      } else if (row.subCategory === 'BONUS') {
+      /* ── BONUS: zero-cost shares ── */
+      } else if (action === 'BONUS') {
         item.qty += rawQty;
         item.lots.push({ qty: rawQty, costPerShare: 0, date: row.Date });
       }
@@ -163,10 +183,14 @@ Pages.portfolio = (() => {
      Render entry point
      ══════════════════════════════════════════════════ */
   function render(container) {
-    _container    = container;
-    _portFilter   = 'all';
-    _currency     = 'USD';
+    _container  = container;
+    _portFilter = 'all';
     _enrichedTxns = null;
+
+    // Register currency-change listener (remove previous to avoid stacking)
+    if (_currHandler) document.removeEventListener('app:currencychange', _currHandler);
+    _currHandler = () => { if (_container) _paint(_container); };
+    document.addEventListener('app:currencychange', _currHandler);
 
     container.innerHTML = `
       <div class="pf-loading" id="pf-loading">
@@ -183,9 +207,7 @@ Pages.portfolio = (() => {
     _loadData();
   }
 
-  /* ── Two-phase loading ──
-     Phase 1 — transactions (often from localStorage cache → instant)
-     Phase 2 — real-time prices + FX (network, fills in prices) */
+  /* ── Two-phase loading ── */
   async function _loadData() {
     const loading = document.getElementById('pf-loading');
     const body    = document.getElementById('pf-body');
@@ -193,7 +215,7 @@ Pages.portfolio = (() => {
     try {
       App.setDataStatus('loading');
 
-      /* Phase 1: positions without prices (fast from cache) */
+      /* Phase 1: transactions (often from cache — fast) */
       const txns    = await DataService.getTransactions();
       _enrichedTxns = Classifier.enrichAll(txns);
       _positions    = _computePositions(_enrichedTxns);
@@ -201,23 +223,46 @@ Pages.portfolio = (() => {
       if (loading) loading.style.display = 'none';
       if (body) { body.style.display = 'block'; _paint(body); }
 
-      /* Phase 2: live prices + FX in parallel */
-      const [rtRows, fxRate] = await Promise.all([
-        DataService.getRealTimeData().catch(() => []),
+      /* Phase 2: live prices + FX */
+      const [rtData, fxRate] = await Promise.all([
+        DataService.getRealTimeData().catch(() => null),
         DataService.getFxRate().catch(() => null),
       ]);
 
       _fxRate = fxRate;
       if (_fxRate) App.setFxRate(_fxRate);
 
+      /* ── RT price map — mirror New1's index-based header scan ──
+         New1: headers.findIndex(h => h.includes('change') || h.includes('%'))
+         We receive row objects from _toObjects, so we scan the key names instead. */
       _rtMap = {};
-      (rtRows || []).forEach(row => {
-        const sym = (row.Symbol || row.symbol || '').toString().trim().toUpperCase();
-        if (!sym) return;
-        const price  = parseFloat((row.Price  || row.price  || '').toString().replace(/[^\d.-]/g, '')) || null;
-        const change = parseFloat((row.Change || row.change || row['Change%'] || row['change%'] || '').toString().replace(/[^\d.-]/g, ''));
-        _rtMap[sym] = { price: price || null, change: isNaN(change) ? null : change };
-      });
+      if (rtData && rtData.values && rtData.values.length > 1) {
+        // Use raw 2D array for index-based approach (bypasses _toObjects column guessing)
+        const headers = rtData.values[0].map(h => h.toString().toLowerCase().trim());
+        const sIdx = Math.max(0, headers.findIndex(h => h.includes('symbol')));
+        const pIdx = Math.max(1, headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('מחיר') || h.includes('שער')));
+        const cIdx = Math.max(2, headers.findIndex(h => h.includes('change') || h.includes('%') || h.includes('שינוי')));
+
+        rtData.values.slice(1).forEach(r => {
+          const sym = (r[sIdx] || '').toString().trim().toUpperCase();
+          if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
+          const price  = parseFloat((r[pIdx] || '').toString().replace(/[$,]/g,  '')) || null;
+          const change = parseFloat((r[cIdx] || '').toString().replace(/[%,\s]/g, ''));
+          _rtMap[sym] = { price: price || null, change: isNaN(change) ? null : change };
+        });
+      } else if (rtData && Array.isArray(rtData)) {
+        // Fallback: _toObjects already ran, scan keys for price/change
+        rtData.forEach(row => {
+          const sym = (row.Symbol || row.symbol || '').toString().trim().toUpperCase();
+          if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
+          const keys   = Object.keys(row);
+          const pKey   = keys.find(k => /price|rate|מחיר|שער/i.test(k))   || 'Price';
+          const cKey   = keys.find(k => /change|%|שינוי/i.test(k))        || 'Change';
+          const price  = parseFloat((row[pKey] || '').toString().replace(/[$,]/g,  '')) || null;
+          const change = parseFloat((row[cKey] || '').toString().replace(/[%,\s]/g, ''));
+          _rtMap[sym]  = { price: price || null, change: isNaN(change) ? null : change };
+        });
+      }
 
       _positions = _enrich(_computePositions(_enrichedTxns));
       App.setDataStatus('live');
@@ -247,7 +292,7 @@ Pages.portfolio = (() => {
     const ports = [...new Set(_positions.map(p => p.portfolio).filter(Boolean))].sort();
 
     container.innerHTML =
-      _renderToolbar(ports) +
+      (ports.length > 1 ? _renderPortFilter(ports) : '') +
       _renderMacros(mac) +
       `<div class="pf-charts-row">
         <div class="pf-chart-card pf-chart-bar">
@@ -265,26 +310,13 @@ Pages.portfolio = (() => {
     _bindEvents(container);
   }
 
-  /* ── Toolbar: portfolio tabs + currency toggle ── */
-  function _renderToolbar(ports) {
-    const usdActive = _currency === 'USD' ? 'active' : '';
-    const ilsActive = _currency === 'ILS' ? 'active' : '';
-
-    const portTabs = ports.length > 1 ? `
+  /* ── Portfolio Filter ── */
+  function _renderPortFilter(ports) {
+    return `
       <div class="pf-filter-bar">
         <span class="pf-filter-label">תיק:</span>
         <button class="pf-port-btn${_portFilter === 'all' ? ' active' : ''}" data-port="all">כל התיקים</button>
         ${ports.map(p => `<button class="pf-port-btn${_portFilter === p ? ' active' : ''}" data-port="${p}">${p}</button>`).join('')}
-      </div>` : '<div></div>';
-
-    return `
-      <div class="pf-toolbar">
-        ${portTabs}
-        <div class="pf-curr-toggle">
-          <span class="pf-toggle-label">תצוגה:</span>
-          <button class="pf-curr-btn ${usdActive}" data-curr="USD">$ USD</button>
-          <button class="pf-curr-btn ${ilsActive}" data-curr="ILS">₪ ILS</button>
-        </div>
       </div>`;
   }
 
@@ -333,10 +365,10 @@ Pages.portfolio = (() => {
     if (!items.length) return '<p class="pf-no-data">אין נתונים</p>';
 
     const maxVal = Math.max(...items.map(it => Math.max(it.cost, it.value))) * 1.08;
-    const H      = 162, padL = 54, padB = 32, padT = 8;
+    const H = 162, padL = 54, padB = 32, padT = 8;
     const chartH = H - padB - padT;
-    const barW   = 20, grpW = 56;
-    const yS     = v => padT + chartH - (v / maxVal) * chartH;
+    const barW = 20, grpW = 56;
+    const yS = v => padT + chartH - (v / maxVal) * chartH;
 
     let grid = '', yLbls = '';
     for (let i = 0; i <= 4; i++) {
@@ -345,7 +377,7 @@ Pages.portfolio = (() => {
       const l = v >= 1e6 ? `${sym}${(v/1e6).toFixed(1)}M`
               : v >= 1e3 ? `${sym}${(v/1e3).toFixed(0)}K`
               : `${sym}${v.toFixed(0)}`;
-      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + items.length*grpW + 10}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.6"/>`;
+      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL+items.length*grpW+10}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.6"/>`;
       yLbls += `<text x="${padL-5}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${l}</text>`;
     }
 
@@ -358,17 +390,14 @@ Pages.portfolio = (() => {
       const vY   = padT + chartH - vH;
       const vCol = it.pnl !== null ? (it.pnl >= 0 ? '#059669' : '#DC2626') : '#64748B';
       const midX = gX + barW + 3;
-
       bars  += `<rect x="${gX}" y="${cY.toFixed(1)}" width="${barW}" height="${cH.toFixed(1)}" fill="#94A3B8" rx="2"/>
                 <rect x="${gX+barW+4}" y="${vY.toFixed(1)}" width="${barW}" height="${vH.toFixed(1)}" fill="${vCol}" rx="2" opacity="0.88"/>`;
       xLbls += `<text x="${midX}" y="${H-8}" text-anchor="middle" font-size="9.5" font-weight="500" fill="var(--text-secondary)" font-family="Inter,sans-serif">${it.symbol}</text>`;
     });
 
-    const svgW = padL + items.length * grpW + 18;
-
     return `
       <div class="pf-bar-scroll">
-        <svg width="${svgW}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <svg width="${padL+items.length*grpW+18}" height="${H}" xmlns="http://www.w3.org/2000/svg">
           ${grid}${yLbls}
           <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+chartH}" stroke="var(--border)" stroke-width="1"/>
           ${bars}${xLbls}
@@ -443,7 +472,7 @@ Pages.portfolio = (() => {
       const pnlCls  = p.pnl === null ? '' : p.pnl >= 0 ? 'pos' : 'neg';
       const chgCls  = p.changePercent === null ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
 
-      /* Price cell: bigger font colored by daily direction + % change below */
+      /* Price cell: larger, colored by daily direction + % change below */
       const priceCell = price !== null
         ? `<div class="pf-price-cell">
              <span class="pf-price-main ${chgCls}">${sym}${fmtMoney(price)}</span>
@@ -462,17 +491,17 @@ Pages.portfolio = (() => {
         : '<span class="pf-td-muted">—</span>';
 
       return `<tr>
-        <td><span class="pf-sym-badge">${p.symbol}</span></td>
-        ${showPort ? `<td class="pf-td-muted">${p.portfolio}</td>` : ''}
-        <td class="pf-td-num">${p.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</td>
-        <td>${priceCell}</td>
-        <td class="pf-td-num">${avgCost !== null ? `${sym}${fmtMoney(avgCost)}` : '—'}</td>
-        <td class="pf-td-num pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</td>
-        <td>${pnlCell}</td>
+        <td class="pf-td-center"><span class="pf-sym-badge">${p.symbol}</span></td>
+        ${showPort ? `<td class="pf-td-center pf-td-muted">${p.portfolio}</td>` : ''}
+        <td class="pf-td-center pf-td-num">${p.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</td>
+        <td class="pf-td-center">${priceCell}</td>
+        <td class="pf-td-center pf-td-num">${avgCost !== null ? `${sym}${fmtMoney(avgCost)}` : '—'}</td>
+        <td class="pf-td-center pf-td-num pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</td>
+        <td class="pf-td-center">${pnlCell}</td>
       </tr>`;
     }).join('');
 
-    const colspan = showPort ? 8 : 7;
+    const colspan = showPort ? 7 : 6;
     return `
       <div class="pf-table-wrap">
         <table class="pf-table">
@@ -524,9 +553,10 @@ Pages.portfolio = (() => {
           </div>
           <div class="pf-card-cell">
             <span class="pf-card-lbl">שער</span>
-            <span class="pf-price-main ${chgCls}" style="font-size:14px">
-              ${price !== null ? `${sym}${fmtMoney(price)}` : '—'}
-            </span>
+            <div class="pf-price-cell" style="align-items:flex-start">
+              <span class="pf-price-main ${chgCls}">${price !== null ? `${sym}${fmtMoney(price)}` : '—'}</span>
+              ${p.changePercent !== null ? `<span class="pf-price-chg ${chgCls}">${fmtPct(p.changePercent)}</span>` : ''}
+            </div>
           </div>
           <div class="pf-card-cell">
             <span class="pf-card-lbl">שווי שוק</span>
@@ -550,14 +580,6 @@ Pages.portfolio = (() => {
 
   /* ── Events ── */
   function _bindEvents(container) {
-    container.querySelectorAll('.pf-curr-btn').forEach(btn =>
-      btn.addEventListener('click', () => {
-        if (btn.dataset.curr === _currency) return;
-        _currency = btn.dataset.curr;
-        _paint(_container);
-      })
-    );
-
     container.querySelectorAll('.pf-port-btn').forEach(btn =>
       btn.addEventListener('click', () => {
         if (btn.dataset.port === _portFilter) return;
