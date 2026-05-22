@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FinanceAPP",
+      "runtimeExecutable": "ruby",
+      "runtimeArgs": ["-run", "-e", "httpd", "--", "-p", "3000", "/Users/yoadgolan/Documents/GitHub/FinanceAPP"],
+      "port": 3000
+    }
+  ]
+}

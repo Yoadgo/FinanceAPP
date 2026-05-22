@@ -1,0 +1,55 @@
+/* ===== DESIGN TOKENS ===== */
+:root {
+
+  /* ── Backgrounds ── */
+  --bg-page:      #F8F9FA;   /* Google light gray — page canvas      */
+  --bg-surface:   #FFFFFF;   /* Cards, panels, topbar                */
+  --bg-subtle:    #F1F3F4;   /* Hover states, input fills            */
+
+  /* ── Text ── */
+  --text-primary:   #202124; /* Google's near-black                  */
+  --text-secondary: #5F6368; /* Google secondary gray                */
+  --text-muted:     #9AA0A6; /* Placeholder / disabled               */
+
+  /* ── Borders & Dividers ── */
+  --border:       #E8EAED;   /* Google standard border               */
+  --border-focus: #C5C8CC;   /* Slightly darker on focus             */
+
+  /* ── Sidebar (medium-dark steel gray) ── */
+  --sidebar-bg:          #2D3748;
+  --sidebar-hover:       rgba(255,255,255,0.07);
+  --sidebar-active-bg:   rgba(255,255,255,0.11);
+  --sidebar-text:        #A0AEC0;
+  --sidebar-text-active: #EDF2F7;
+  --sidebar-border:      rgba(255,255,255,0.08);
+
+  /* ── Blue-gray tint (used very sparingly) ── */
+  --blue-gray:      #BDC6D0;  /* Subtle tint on icons, dividers      */
+  --blue-gray-dark: #7A8899;  /* Active/hover tint                   */
+
+  /* ── ACCENT — Neon yellow (sports car, used in tiny doses) ── */
+  --accent:       #D9FF00;   /* Lamborghini-style neon yellow        */
+  --accent-glow:  rgba(217, 255, 0, 0.18);
+
+  /* ── Semantic ── */
+  --success:  #1E8E3E;
+  --danger:   #D93025;
+  --warning:  #F29900;
+
+  /* ── Layout ── */
+  --sidebar-width:      240px;
+  --sidebar-collapsed:   64px;
+  --topbar-height:       60px;
+
+  --radius-sm:  6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+
+  /* ── Shadows (very light — Google style) ── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.08);
+  --shadow-md: 0 2px 12px rgba(0,0,0,0.10);
+
+  /* ── Transitions ── */
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}

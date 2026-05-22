@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinanceAPP</title>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/variables.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="mobile-hidden"></aside>
+
+  <!-- Overlay (mobile) -->
+  <div id="overlay"></div>
+
+  <!-- Main area -->
+  <div id="main">
+    <header id="topbar"></header>
+    <main id="content" class="fade-in"></main>
+  </div>
+
+</div>
+
+<!-- JS Modules (order matters) -->
+<script src="js/modules/navigation.js"></script>
+<script src="js/modules/dataService.js"></script>
+<script src="js/modules/classifier.js"></script>
+
+<!-- Pages (loaded individually — each page is its own file) -->
+<!-- <script src="js/components/dashboard.js"></script> -->
+
+<!-- App bootstrap -->
+<script src="js/app.js"></script>
+
+</body>
+</html>
