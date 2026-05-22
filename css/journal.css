@@ -577,19 +577,103 @@
   gap: 10px;
 }
 
-/* ── Mobile ── */
-@media (max-width: 768px) {
-  .journal-table th.col-qty,
-  .journal-table th.col-comm,
-  .journal-table th.col-tax,
-  .journal-table th.col-desc,
-  .journal-table th.col-subcat,
-  .journal-table td.col-qty,
-  .journal-table td.col-comm,
-  .journal-table td.col-tax,
-  .journal-table td.col-desc,
-  .journal-table td.col-subcat { display: none; }
+/* ── Mobile: replace table with card view ── */
+.journal-cards { display: none; }
 
-  .journal-table th.col-port,
-  .journal-table td.col-port { display: none; }
+@media (max-width: 768px) {
+  .journal-table-wrap { display: none; }
+
+  .journal-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Compact filter bar on mobile */
+  .date-filter-btn { padding: 7px 10px; font-size: 12px; }
+
+  .journal-search {
+    order: 10;
+    min-width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    margin-top: 2px;
+  }
 }
+
+/* ── Card styles ── */
+.jnl-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  border-right: 3px solid var(--border);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.jnl-card[data-cat="STOCKS"]   { border-right-color: #2563EB; }
+.jnl-card[data-cat="CASH"]     { border-right-color: #7C3AED; }
+.jnl-card[data-cat="INTEREST"] { border-right-color: #059669; }
+.jnl-card[data-cat="FEES"]     { border-right-color: #DC2626; }
+.jnl-card[data-cat="TAXES"]    { border-right-color: #EA580C; }
+
+.jnl-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.jnl-card-date {
+  font-size: 12px;
+  font-family: 'Roboto Mono', monospace;
+  color: var(--text-muted);
+}
+
+.jnl-card-amount {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.jnl-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.jnl-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.jnl-card-sym {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.jnl-card-desc {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.jnl-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.jnl-card-dot { color: var(--border-focus); font-size: 10px; }

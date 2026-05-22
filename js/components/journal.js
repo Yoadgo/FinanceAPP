@@ -323,6 +323,43 @@ Pages.journal = (() => {
     _popupCol = null;
   }
 
+  /* ── Mobile card rendering ── */
+  function _card(row) {
+    const { val, sym, style } = getAmount(row);
+    const desc     = generateDescription(row);
+    const isTicker = /^[A-Z]{1,5}$/.test((row.Symbol || '').toString().trim());
+    const comm     = n(row.Commission);
+    const tax      = n(row.EstimatedTax);
+    const portName = (row.Portfolio || '').trim();
+
+    const metaParts = [];
+    if (portName) metaParts.push(`<span>${portName}</span>`);
+    if (comm > 0) metaParts.push(`<span>עמלה: <span style="color:var(--danger)">−${sym||'₪'}${fmtMoney(comm)}</span></span>`);
+    if (tax  > 0) metaParts.push(`<span>מס: <span style="color:var(--danger)">−₪${fmtMoney(tax)}</span></span>`);
+
+    return `<div class="jnl-card" data-cat="${row.category}">
+      <div class="jnl-card-top">
+        <span class="jnl-card-date">${fmtDate(row.Date)}</span>
+        <span class="jnl-card-amount">${amtHTML(val, sym, style)}</span>
+      </div>
+      <div class="jnl-card-body">
+        <div class="jnl-card-badges">
+          ${catBadge(row.subCategory)}
+          ${isTicker ? `<span class="jnl-card-sym">${row.Symbol}</span>` : ''}
+        </div>
+        <div class="jnl-card-desc">${desc}</div>
+        ${metaParts.length ? `<div class="jnl-card-meta">${metaParts.join('<span class="jnl-card-dot"> · </span>')}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function _renderCards() {
+    if (!_filtered.length) {
+      return `<p style="text-align:center;padding:40px 20px;color:var(--text-muted);font-size:13px">אין תנועות לתקופה הזו</p>`;
+    }
+    return _filtered.map(row => _card(row)).join('');
+  }
+
   /* ── Render entry point ── */
   function render(container) {
     _container = container;
@@ -434,6 +471,11 @@ Pages.journal = (() => {
               : `<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted)">אין תנועות לתקופה הזו</td></tr>`}
           </tbody>
         </table>
+      </div>
+
+      <!-- ── Cards (mobile) ── -->
+      <div class="journal-cards">
+        ${_renderCards()}
       </div>`;
 
     _bind(container);
