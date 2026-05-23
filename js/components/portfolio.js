@@ -78,6 +78,7 @@ Pages.portfolio = (() => {
        Exclude: BONUS (reverse splits with negative qty — do NOT call Math.abs on them).
        Fallback: UNCLASSIFIED rows that look like trades from raw Type string.        */
     const relevant = transactions
+      .map((r, _sheetIdx) => ({ ...r, _sheetIdx }))   // preserve original Google Sheet row order
       .filter(r => {
         const cat = r.category;
         const sub = r.subCategory;
@@ -94,16 +95,26 @@ Pages.portfolio = (() => {
         // Including them (even with Math.abs) adds shares and breaks FIFO.
       })
       .sort((a, b) => {
+        // 1️⃣ Primary: chronological by date
         const dateDiff = new Date(a.Date) - new Date(b.Date);
         if (dateDiff !== 0) return dateDiff;
-        // Tiebreaker for same-date rows: BUY before SELL.
-        // Brokers sometimes store round-trip (day-trade) rows with SELL first in the sheet.
-        // Without this, SELL fires before BUY → qty never reaches 0 → ghost position.
+
+        // 2️⃣ Same-date tiebreaker: BUY before SELL
+        //    Brokers sometimes store round-trip (day-trade) rows with SELL first.
+        //    A long-only portfolio can't sell before it buys, so BUY must be first.
+        //    This fixes positions that never reach qty=0 (ghost positions).
+        //    Note: total net P&L is unaffected by intra-day ordering — only which
+        //    specific lot is tagged as "sold" changes (relevant for tax reporting).
         const aIsBuy = a.subCategory === 'BUY_STOCK' || (a.Type||'').includes('קני');
         const bIsBuy = b.subCategory === 'BUY_STOCK' || (b.Type||'').includes('קני');
         if (aIsBuy && !bIsBuy) return -1;
         if (!aIsBuy && bIsBuy) return  1;
-        return 0;
+
+        // 3️⃣ Same-date same-type: preserve original Google Sheet row order.
+        //    This keeps the broker's internal chronology (e.g. two buys on the same day
+        //    stay in the order the broker recorded them, giving the most accurate FIFO
+        //    lot assignment possible without intra-day time data).
+        return a._sheetIdx - b._sheetIdx;
       });
 
     relevant.forEach(row => {
