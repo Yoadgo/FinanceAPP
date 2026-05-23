@@ -93,7 +93,18 @@ Pages.portfolio = (() => {
         // Reverse splits arrive as הטבה with negative qty → BONUS.
         // Including them (even with Math.abs) adds shares and breaks FIFO.
       })
-      .sort((a, b) => new Date(a.Date) - new Date(b.Date));
+      .sort((a, b) => {
+        const dateDiff = new Date(a.Date) - new Date(b.Date);
+        if (dateDiff !== 0) return dateDiff;
+        // Tiebreaker for same-date rows: BUY before SELL.
+        // Brokers sometimes store round-trip (day-trade) rows with SELL first in the sheet.
+        // Without this, SELL fires before BUY → qty never reaches 0 → ghost position.
+        const aIsBuy = a.subCategory === 'BUY_STOCK' || (a.Type||'').includes('קני');
+        const bIsBuy = b.subCategory === 'BUY_STOCK' || (b.Type||'').includes('קני');
+        if (aIsBuy && !bIsBuy) return -1;
+        if (!aIsBuy && bIsBuy) return  1;
+        return 0;
+      });
 
     relevant.forEach(row => {
       const sym = (row.Symbol || '').toString().trim().toUpperCase();
@@ -279,11 +290,6 @@ Pages.portfolio = (() => {
       const txns    = await DataService.getTransactions();
       _enrichedTxns = Classifier.enrichAll(txns);
       _positions    = _computePositions(_enrichedTxns);
-
-      // 🔍 Auto-debug ghost positions — remove once resolved
-      console.group('🔍 Portfolio FIFO auto-debug');
-      debugFifo(['TQQQ', 'MBLY', 'OPEN']);
-      console.groupEnd();
 
       if (loading) loading.style.display = 'none';
       if (body) { body.style.display = 'block'; _paint(body); }
