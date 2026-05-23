@@ -213,7 +213,11 @@ Pages.portfolio = (() => {
           }
         }
         item.qty -= qty;
-        if (item.qty < 0.001) item.qty = 0;  // clamp float dust
+        // *** No clamp here — mirrors New1.html exactly ***
+        // If SELL somehow fires before BUY (e.g. due to sort tie-break edge case),
+        // qty goes temporarily negative. The subsequent BUY restores it.
+        // The final filter (p.qty > 0.01) handles all cases — closed positions,
+        // float dust, and any negative remnants.
       }
     });
 
