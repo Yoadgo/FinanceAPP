@@ -280,6 +280,11 @@ Pages.portfolio = (() => {
       _enrichedTxns = Classifier.enrichAll(txns);
       _positions    = _computePositions(_enrichedTxns);
 
+      // 🔍 Auto-debug ghost positions — remove once resolved
+      console.group('🔍 Portfolio FIFO auto-debug');
+      debugFifo(['TQQQ', 'MBLY', 'OPEN']);
+      console.groupEnd();
+
       if (loading) loading.style.display = 'none';
       if (body) { body.style.display = 'block'; _paint(body); }
 
@@ -649,5 +654,66 @@ Pages.portfolio = (() => {
     );
   }
 
-  return { render };
+  /* ═══════════════════════════════════════════════════
+     FIFO Debugger — Pages.portfolio.debugFifo('TQQQ')
+     Traces every transaction for a symbol through the
+     FIFO filter so you can see exactly what's included,
+     what's excluded, and the running qty at each step.
+     ══════════════════════════════════════════════════ */
+  function debugFifo(symbols) {
+    if (!_enrichedTxns || !_enrichedTxns.length) {
+      console.warn('debugFifo: no enriched transactions yet — navigate to the portfolio page first.');
+      return;
+    }
+    const list = Array.isArray(symbols) ? symbols : [symbols];
+    list.forEach(sym => {
+      const target = sym.trim().toUpperCase();
+      const rows   = _enrichedTxns
+        .filter(r => (r.Symbol || '').toString().trim().toUpperCase() === target)
+        .sort((a, b) => new Date(a.Date) - new Date(b.Date));
+
+      if (!rows.length) { console.warn(`debugFifo: no transactions found for ${target}`); return; }
+
+      console.group(`🔍 FIFO trace: ${target} (${rows.length} total rows)`);
+
+      let runningQty = 0;
+      rows.forEach(r => {
+        const cat = r.category, sub = r.subCategory;
+        const inFifo = (cat === 'STOCKS') || (sub === 'SPLIT') ||
+          ((cat === 'UNCLASSIFIED' || !sub) && ((r.Type||'').includes('קני') || (r.Type||'').includes('מכיר')));
+
+        const rawQty  = parseFloat((r.Qty          ||'0').toString().replace(/[^\d.-]/g,'')) || 0;
+        const rawRate = parseFloat((r.ExecutionRate ||'0').toString().replace(/[^\d.-]/g,'')) || 0;
+        const absQty  = Math.abs(rawQty);
+
+        // Replicate the exact FIFO logic for running qty
+        if (inFifo && sub !== 'SPLIT') {
+          let action = null;
+          if      (sub === 'BUY_STOCK')  action = 'BUY';
+          else if (sub === 'SELL_STOCK') action = 'SELL';
+          else {
+            const t = (r.Type||'').toUpperCase();
+            if (t.includes('קני'))  action = 'BUY';
+            if (t.includes('מכיר')) action = 'SELL';
+          }
+          if (action === 'BUY')  runningQty += absQty;
+          if (action === 'SELL') { runningQty -= absQty; if (runningQty < 0.001) runningQty = 0; }
+        }
+
+        const flag   = inFifo ? '✅' : '⛔';
+        const qtyStr = rawQty !== absQty ? `${rawQty} (abs ${absQty})` : `${rawQty}`;
+        console.log(
+          flag, r.Date, `"${r.Type}"`,
+          `[${cat} / ${sub}]`,
+          `qty=${qtyStr}  rate=${rawRate}`,
+          inFifo ? `→ running qty: ${runningQty.toFixed(4)}` : ''
+        );
+      });
+
+      console.log(`%cFinal qty after FIFO: ${runningQty.toFixed(4)}`, 'font-weight:bold;color:' + (runningQty > 0.01 ? 'orange' : 'green'));
+      console.groupEnd();
+    });
+  }
+
+  return { render, debugFifo };
 })();
