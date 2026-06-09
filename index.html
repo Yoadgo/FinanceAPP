@@ -9,12 +9,13 @@
   <!-- Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 
-  <!-- Styles -->
-  <link rel="stylesheet" href="css/variables.css" />
-  <link rel="stylesheet" href="css/layout.css" />
-  <link rel="stylesheet" href="css/components.css" />
-  <link rel="stylesheet" href="css/journal.css" />
-  <link rel="stylesheet" href="css/portfolio.css" />
+  <!-- Styles —  ?v= is a cache-buster: bump APP_VER on every deploy so the
+       browser / GitHub Pages CDN always fetch the latest CSS & JS. -->
+  <link rel="stylesheet" href="css/variables.css?v=3" />
+  <link rel="stylesheet" href="css/layout.css?v=3" />
+  <link rel="stylesheet" href="css/components.css?v=3" />
+  <link rel="stylesheet" href="css/journal.css?v=3" />
+  <link rel="stylesheet" href="css/portfolio.css?v=3" />
 </head>
 <body>
 
@@ -41,18 +42,18 @@
 <nav id="bottom-nav"></nav>
 
 <!-- 1. Modules (utilities, data, logic) -->
-<script src="js/modules/navigation.js"></script>
-<script src="js/modules/dataService.js"></script>
-<script src="js/modules/classifier.js"></script>
-<script src="js/modules/portfolioEngine.js"></script>
+<script src="js/modules/navigation.js?v=3"></script>
+<script src="js/modules/dataService.js?v=3"></script>
+<script src="js/modules/classifier.js?v=3"></script>
+<script src="js/modules/portfolioEngine.js?v=3"></script>
 
 <!-- 2. App shell — defines Pages={} and App before any page registers itself -->
-<script src="js/app.js"></script>
+<script src="js/app.js?v=3"></script>
 
 <!-- 3. Pages — each file registers itself into Pages{} -->
 <!-- <script src="js/components/dashboard.js"></script> -->
-<script src="js/components/journal.js"></script>
-<script src="js/components/portfolio.js"></script>
+<script src="js/components/journal.js?v=3"></script>
+<script src="js/components/portfolio.js?v=3"></script>
 
 </body>
 </html>
