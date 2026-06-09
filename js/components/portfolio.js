@@ -10,6 +10,13 @@ Pages.portfolio = (() => {
   let _container    = null;
   let _enrichedTxns = null;
   let _currHandler  = null;   // app:currencychange listener ref
+  let _pollTimer    = null;   // live-price polling interval
+  let _prevPrices   = {};     // symbol → last seen price (for blink-on-change)
+  let _modalEl      = null;   // stock-detail modal overlay
+  let _escHandler   = null;   // Esc-to-close listener
+  let _visHandler   = null;   // visibilitychange listener ref
+
+  const POLL_MS = 10000;      // live price refresh cadence
 
   /* ── Helpers ── */
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
@@ -129,11 +136,19 @@ Pages.portfolio = (() => {
     _container  = container;
     _portFilter = 'all';
     _enrichedTxns = null;
+    _stopPolling();             // clear any timer from a previous mount
+    _closeModal();              // close a stray modal if navigating back in
 
     // Register currency-change listener (remove previous to avoid stacking)
     if (_currHandler) document.removeEventListener('app:currencychange', _currHandler);
     _currHandler = () => { if (_container) _paint(_container); };
     document.addEventListener('app:currencychange', _currHandler);
+
+    // When the tab becomes visible again, refresh prices immediately
+    // (instead of waiting for the next 10s tick).
+    if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
+    _visHandler = () => { if (!document.hidden && _pollTimer) _pollPrices(); };
+    document.addEventListener('visibilitychange', _visHandler);
 
     container.innerHTML = `
       <div class="pf-loading" id="pf-loading">
@@ -150,7 +165,39 @@ Pages.portfolio = (() => {
     _loadData();
   }
 
-  /* ── Two-phase loading ── */
+  /* ── Build the symbol→{price,change} map from a raw realtime response ── */
+  function _buildRtMap(rtData) {
+    const map = {};
+    if (rtData && rtData.values && rtData.values.length > 1) {
+      const headers = rtData.values[0].map(h => h.toString().toLowerCase().trim());
+      const sIdx = Math.max(0, headers.findIndex(h => h.includes('symbol')));
+      const pIdx = Math.max(1, headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('מחיר') || h.includes('שער')));
+      const cIdx = Math.max(2, headers.findIndex(h => h.includes('change') || h.includes('%') || h.includes('שינוי')));
+      rtData.values.slice(1).forEach(r => {
+        const sym = (r[sIdx] || '').toString().trim().toUpperCase();
+        if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
+        const price  = parseFloat((r[pIdx] || '').toString().replace(/[$,]/g,  '')) || null;
+        const change = parseFloat((r[cIdx] || '').toString().replace(/[%,\s]/g, ''));
+        map[sym] = { price: price || null, change: isNaN(change) ? null : change };
+      });
+    } else if (rtData && Array.isArray(rtData)) {
+      rtData.forEach(row => {
+        const sym = (row.Symbol || row.symbol || '').toString().trim().toUpperCase();
+        if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
+        const keys   = Object.keys(row);
+        const pKey   = keys.find(k => /price|rate|מחיר|שער/i.test(k))   || 'Price';
+        const cKey   = keys.find(k => /change|%|שינוי/i.test(k))        || 'Change';
+        const price  = parseFloat((row[pKey] || '').toString().replace(/[$,]/g,  '')) || null;
+        const change = parseFloat((row[cKey] || '').toString().replace(/[%,\s]/g, ''));
+        map[sym]  = { price: price || null, change: isNaN(change) ? null : change };
+      });
+    }
+    return map;
+  }
+
+  /* ── Single-phase loading ──
+     Nothing is painted until ALL data (transactions + live prices + FX) is
+     ready, so no window ever shows partial/intermediate figures. */
   async function _loadData() {
     const loading = document.getElementById('pf-loading');
     const body    = document.getElementById('pf-body');
@@ -158,62 +205,31 @@ Pages.portfolio = (() => {
     try {
       App.setDataStatus('loading');
 
-      /* Phase 1: transactions (often from cache — fast) */
-      const txns    = await DataService.getTransactions();
-      _enrichedTxns = Classifier.enrichAll(txns);
-      _positions    = PortfolioEngine.computePositions(_enrichedTxns);
-
-      if (loading) loading.style.display = 'none';
-      if (body) { body.style.display = 'block'; _paint(body); }
-
-      /* Phase 2: live prices + FX */
-      const [rtData, fxRate] = await Promise.all([
+      const [txns, rtData, fxRate] = await Promise.all([
+        DataService.getTransactions(),
         DataService.getRealTimeData().catch(() => null),
         DataService.getFxRate().catch(() => null),
       ]);
 
+      _enrichedTxns = Classifier.enrichAll(txns);
       _fxRate = fxRate;
       if (_fxRate) App.setFxRate(_fxRate);
 
-      /* ── RT price map — mirror New1's index-based header scan ──
-         New1: headers.findIndex(h => h.includes('change') || h.includes('%'))
-         We receive row objects from _toObjects, so we scan the key names instead. */
-      _rtMap = {};
-      if (rtData && rtData.values && rtData.values.length > 1) {
-        // Use raw 2D array for index-based approach (bypasses _toObjects column guessing)
-        const headers = rtData.values[0].map(h => h.toString().toLowerCase().trim());
-        const sIdx = Math.max(0, headers.findIndex(h => h.includes('symbol')));
-        const pIdx = Math.max(1, headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('מחיר') || h.includes('שער')));
-        const cIdx = Math.max(2, headers.findIndex(h => h.includes('change') || h.includes('%') || h.includes('שינוי')));
-
-        rtData.values.slice(1).forEach(r => {
-          const sym = (r[sIdx] || '').toString().trim().toUpperCase();
-          if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
-          const price  = parseFloat((r[pIdx] || '').toString().replace(/[$,]/g,  '')) || null;
-          const change = parseFloat((r[cIdx] || '').toString().replace(/[%,\s]/g, ''));
-          _rtMap[sym] = { price: price || null, change: isNaN(change) ? null : change };
-        });
-      } else if (rtData && Array.isArray(rtData)) {
-        // Fallback: _toObjects already ran, scan keys for price/change
-        rtData.forEach(row => {
-          const sym = (row.Symbol || row.symbol || '').toString().trim().toUpperCase();
-          if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
-          const keys   = Object.keys(row);
-          const pKey   = keys.find(k => /price|rate|מחיר|שער/i.test(k))   || 'Price';
-          const cKey   = keys.find(k => /change|%|שינוי/i.test(k))        || 'Change';
-          const price  = parseFloat((row[pKey] || '').toString().replace(/[$,]/g,  '')) || null;
-          const change = parseFloat((row[cKey] || '').toString().replace(/[%,\s]/g, ''));
-          _rtMap[sym]  = { price: price || null, change: isNaN(change) ? null : change };
-        });
-      }
+      _rtMap = _buildRtMap(rtData);
+      _prevPrices = {};
+      Object.entries(_rtMap).forEach(([s, v]) => { if (v.price != null) _prevPrices[s] = v.price; });
 
       _positions = _enrich(PortfolioEngine.computePositions(_enrichedTxns));
+
       App.setDataStatus('live');
-      if (body) _paint(body);
+      if (loading) loading.style.display = 'none';
+      if (body) { body.style.display = 'block'; _paint(body); }
+
+      _startPolling();   // begin live price refresh
 
     } catch (err) {
       App.setDataStatus('error', err.message);
-      if (loading) loading.innerHTML = `
+      if (loading) { loading.style.display = ''; loading.innerHTML = `
         <div class="empty-icon" style="margin:0 auto;background:rgba(217,48,37,0.08)">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/>
@@ -221,7 +237,92 @@ Pages.portfolio = (() => {
           </svg>
         </div>
         <p style="color:var(--danger);font-size:13px;margin-top:10px;font-weight:600">שגיאה בטעינת הנתונים</p>
-        <p style="color:var(--text-muted);font-size:12px;margin-top:4px;max-width:340px;text-align:center;line-height:1.5">${err.message}</p>`;
+        <p style="color:var(--text-muted);font-size:12px;margin-top:4px;max-width:340px;text-align:center;line-height:1.5">${err.message}</p>`; }
+    }
+  }
+
+  /* ═══════════════════════════════════════════════════
+     Live price polling + in-place blink updates
+     ══════════════════════════════════════════════════ */
+  function _startPolling() {
+    _stopPolling();
+    _pollTimer = setInterval(_pollPrices, POLL_MS);
+  }
+  function _stopPolling() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  }
+
+  async function _pollPrices() {
+    // Skip if the page is hidden or the portfolio body is gone (navigated away)
+    if (document.hidden) return;
+    if (!_container || !document.body.contains(_container)) { _stopPolling(); return; }
+    try {
+      const rtData = await DataService.getRealTimeData(true);   // force fresh
+      const fresh  = _buildRtMap(rtData);
+      if (Object.keys(fresh).length) {
+        _rtMap = fresh;
+        _positions = _enrich(PortfolioEngine.computePositions(_enrichedTxns));
+        _patchPrices();
+      }
+    } catch (_) { /* transient network error — keep last values */ }
+  }
+
+  /* Update price/value/P&L cells in place (no full repaint) and blink any
+     cell whose price actually changed. Also refreshes the macro totals. */
+  function _patchPrices() {
+    if (!_container) return;
+    const sym = currSym();
+    const vis = _visible();
+
+    vis.forEach(p => {
+      const row = _container.querySelector(`tr[data-key="${_rowKey(p)}"]`);
+      const prev = _prevPrices[p.symbol];
+      const curr = p.currentPrice;
+
+      if (row) {
+        const priceCell = row.querySelector('.pf-price-cell');
+        const valCell   = row.querySelector('.pf-val-cell');
+        const pnlCell   = row.querySelector('.pf-pnl-cell');
+        if (priceCell) priceCell.outerHTML = _priceCellHTML(p, sym);
+        if (valCell)   valCell.innerHTML   = _valCellInner(p, sym);
+        if (pnlCell)   pnlCell.outerHTML    = _pnlCellHTML(p, sym);
+
+        // Blink only when the price genuinely moved
+        if (curr != null && prev != null && curr !== prev) {
+          const freshCell = row.querySelector('.pf-price-cell');
+          if (freshCell) {
+            const cls = curr > prev ? 'pf-blink-up' : 'pf-blink-down';
+            freshCell.classList.add(cls);
+            setTimeout(() => freshCell.classList.remove(cls), 1000);
+          }
+        }
+      }
+      if (curr != null) _prevPrices[p.symbol] = curr;
+    });
+
+    // Refresh macro totals (value + P&L) without disturbing the layout
+    const mac = _macros(vis);
+    _patchMacros(mac, sym);
+  }
+
+  function _patchMacros(m, sym) {
+    const tv  = toDisplay(m.totalValue);
+    const tc  = toDisplay(m.totalCost);
+    const pnl = toDisplay(m.pnl);
+    const cards = _container.querySelectorAll('.pf-macro-card');
+    if (cards[0]) {
+      const v = cards[0].querySelector('.pf-macro-value');
+      const s = cards[0].querySelector('.pf-macro-sub');
+      if (v) v.textContent = `${sym}${tv !== null ? fmtMoney(tv) : '—'}`;
+      if (s) s.textContent = `עלות: ${sym}${tc !== null ? fmtMoney(tc) : '—'}`;
+    }
+    if (cards[1]) {
+      const color = m.pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+      const sign  = m.pnl >= 0 ? '+' : '−';
+      const v = cards[1].querySelector('.pf-macro-value');
+      const s = cards[1].querySelector('.pf-macro-sub');
+      if (v) { v.textContent = pnl !== null ? `${sign}${sym}${fmtMoney(Math.abs(pnl))}` : '—'; v.style.color = color; }
+      if (s) { s.textContent = fmtPct(m.pnlPct); s.style.color = color; }
     }
   }
 
@@ -237,17 +338,19 @@ Pages.portfolio = (() => {
     container.innerHTML =
       (ports.length > 1 ? _renderPortFilter(ports) : '') +
       _renderMacros(mac) +
-      `<div class="pf-charts-row">
-        <div class="pf-chart-card pf-chart-bar">
-          <div class="pf-chart-title">עלות מושקעת מול שווי נוכחי</div>
-          ${_renderBarChart(vis)}
-        </div>
-        <div class="pf-chart-card pf-chart-pie">
-          <div class="pf-chart-title">חלוקת נכסים</div>
-          ${_renderPieChart(vis)}
+      `<div class="pf-main-grid">
+        ${_renderTable(vis, ports.length > 1 && _portFilter === 'all')}
+        <div class="pf-charts-col">
+          <div class="pf-chart-card pf-chart-bar">
+            <div class="pf-chart-title">עלות מושקעת מול שווי נוכחי</div>
+            ${_renderBarChart(vis)}
+          </div>
+          <div class="pf-chart-card pf-chart-pie">
+            <div class="pf-chart-title">חלוקת נכסים</div>
+            ${_renderPieChart(vis)}
+          </div>
         </div>
       </div>` +
-      _renderTable(vis, ports.length > 1 && _portFilter === 'all') +
       _renderCards(vis);
 
     _bindEvents(container);
@@ -403,44 +506,49 @@ Pages.portfolio = (() => {
       </div>`;
   }
 
+  /* ── Row key & shared cell builders (reused by _patchPrices for live updates) ── */
+  function _rowKey(p) { return p.symbol; }   // symbol is unique within any single view
+
+  function _priceCellHTML(p, sym) {
+    const price  = toDisplay(p.currentPrice);
+    const chgCls = p.changePercent === null || p.changePercent === undefined ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
+    if (price === null) return `<div class="pf-price-cell"><span class="pf-td-muted">—</span></div>`;
+    return `<div class="pf-price-cell">
+        <span class="pf-price-main ${chgCls}">${sym}${fmtMoney(price)}</span>
+        ${p.changePercent !== null && p.changePercent !== undefined
+          ? `<span class="pf-price-chg ${chgCls}">${fmtPct(p.changePercent)}</span>` : ''}
+      </div>`;
+  }
+
+  function _pnlCellHTML(p, sym) {
+    const pnl    = toDisplay(p.pnl);
+    const pnlCls = p.pnl === null || p.pnl === undefined ? '' : p.pnl >= 0 ? 'pos' : 'neg';
+    if (pnl === null) return `<div class="pf-pnl-cell"><span class="pf-td-muted">—</span></div>`;
+    return `<div class="pf-pnl-cell ${pnlCls}">
+        <span class="pf-pnl-amt">${p.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(pnl))}</span>
+        <span class="pf-pnl-pct">${fmtPct(p.pnlPct)}</span>
+      </div>`;
+  }
+
+  function _valCellInner(p, sym) {
+    const mktVal = toDisplay(p.marketValue);
+    return mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—';
+  }
+
   /* ── Holdings Table (desktop) ── */
   function _renderTable(positions, showPort) {
     const sym = currSym();
 
     const rows = positions.map(p => {
-      const price   = toDisplay(p.currentPrice);
       const avgCost = toDisplay(p.avgCost);
-      const mktVal  = toDisplay(p.marketValue);
-      const pnl     = toDisplay(p.pnl);
-      const pnlCls  = p.pnl === null ? '' : p.pnl >= 0 ? 'pos' : 'neg';
-      const chgCls  = p.changePercent === null ? '' : p.changePercent >= 0 ? 'pos' : 'neg';
-
-      /* Price cell: larger, colored by daily direction + % change below */
-      const priceCell = price !== null
-        ? `<div class="pf-price-cell">
-             <span class="pf-price-main ${chgCls}">${sym}${fmtMoney(price)}</span>
-             ${p.changePercent !== null
-               ? `<span class="pf-price-chg ${chgCls}">${fmtPct(p.changePercent)}</span>`
-               : ''}
-           </div>`
-        : '<span class="pf-td-muted">—</span>';
-
-      /* P&L cell: amount + % stacked */
-      const pnlCell = pnl !== null
-        ? `<div class="pf-pnl-cell ${pnlCls}">
-             <span class="pf-pnl-amt">${p.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(pnl))}</span>
-             <span class="pf-pnl-pct">${fmtPct(p.pnlPct)}</span>
-           </div>`
-        : '<span class="pf-td-muted">—</span>';
-
-      return `<tr>
-        <td class="pf-td-center"><span class="pf-sym-badge">${p.symbol}</span></td>
+      return `<tr data-key="${_rowKey(p)}">
+        <td class="pf-td-center"><span class="pf-sym-badge pf-sym-click" data-sym="${p.symbol}" title="פרטי מניה">${p.symbol}</span></td>
         ${showPort ? `<td class="pf-td-center pf-td-muted">${p.portfolio}</td>` : ''}
         <td class="pf-td-center pf-td-num">${p.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</td>
-        <td class="pf-td-center">${priceCell}</td>
+        <td class="pf-td-center">${_priceCellHTML(p, sym)}</td>
         <td class="pf-td-center pf-td-num">${avgCost !== null ? `${sym}${fmtMoney(avgCost)}` : '—'}</td>
-        <td class="pf-td-center pf-td-num pf-td-bold">${mktVal !== null ? `${sym}${fmtMoney(mktVal)}` : '—'}</td>
-        <td class="pf-td-center">${pnlCell}</td>
+        <td class="pf-td-center pf-td-num pf-td-bold pf-val-cell">${_valCellInner(p, sym)}</td>
+        <td class="pf-td-center">${_pnlCellHTML(p, sym)}</td>
       </tr>`;
     }).join('');
 
@@ -483,7 +591,7 @@ Pages.portfolio = (() => {
 
       return `<div class="pf-card">
         <div class="pf-card-top">
-          <span class="pf-sym-badge">${p.symbol}</span>
+          <span class="pf-sym-badge pf-sym-click" data-sym="${p.symbol}" title="פרטי מניה">${p.symbol}</span>
           ${p.changePercent !== null
             ? `<span class="pf-chg-badge ${chgCls}">${fmtPct(p.changePercent)}</span>`
             : ''}
@@ -530,6 +638,269 @@ Pages.portfolio = (() => {
         _paint(_container);
       })
     );
+
+    // Click a ticker → open the stock-detail modal
+    container.querySelectorAll('.pf-sym-click').forEach(el =>
+      el.addEventListener('click', () => _openStockModal(el.dataset.sym))
+    );
+  }
+
+  /* ═══════════════════════════════════════════════════
+     STOCK DETAIL MODAL
+     ══════════════════════════════════════════════════ */
+  let _modalState = null;   // { symbol, history, trades, range }
+
+  /* All STOCKS + SPLIT rows for a symbol, chronological. */
+  function _symbolRows(symbol) {
+    return _enrichedTxns
+      .filter(r => (r.Symbol || '').toString().trim().toUpperCase() === symbol)
+      .filter(r => r.category === 'STOCKS' || r.subCategory === 'SPLIT')
+      .map((r, i) => ({ ...r, _i: i }))
+      .sort((a, b) => (new Date(a.Date) - new Date(b.Date)) || (a._i - b._i));
+  }
+
+  /* Split events as [{date(ms), ratio}], derived from broker הטבה rows.
+     Ratio = (held + delta) / held within the same portfolio; deduped by date
+     (both portfolios' rows on a split date carry the same ratio). */
+  function _splitEvents(symbol) {
+    const runByPort = {};
+    const events = [];
+    const seen = new Set();
+    _symbolRows(symbol).forEach(r => {
+      const port = (r.Portfolio || '').trim();
+      const q = Math.abs(n(r.Qty));
+      if (r.subCategory === 'SPLIT') {
+        const held = runByPort[port] || 0;
+        if (held > 0.001 && q > 0) {
+          const key = (r.Date || '').toString().slice(0, 10);
+          if (!seen.has(key)) { events.push({ date: new Date(r.Date).getTime(), ratio: (held + q) / held }); seen.add(key); }
+          runByPort[port] = held + q;
+        }
+        return;
+      }
+      const isBuy = r.subCategory === 'BUY_STOCK' || (r.Type || '').includes('קני');
+      runByPort[port] = (runByPort[port] || 0) + (isBuy ? q : -q);
+    });
+    return events;
+  }
+
+  /* Buy/sell trades with prices split-adjusted to align with the
+     (split-adjusted) history line. Respects the active portfolio filter. */
+  function _splitAdjustedTrades(symbol, portFilter) {
+    const events = _splitEvents(symbol);
+    return _symbolRows(symbol)
+      .filter(r => r.category === 'STOCKS')
+      .filter(r => portFilter === 'all' || (r.Portfolio || '').trim() === portFilter)
+      .map(r => {
+        const t = new Date(r.Date).getTime();
+        let factor = 1;
+        events.forEach(e => { if (t < e.date) factor *= e.ratio; });
+        const isBuy = r.subCategory === 'BUY_STOCK' || (r.Type || '').includes('קני');
+        const rawPrice = Math.abs(n(r.ExecutionRate));
+        const rawQty   = Math.abs(n(r.Qty));
+        return {
+          date: t, dateStr: (r.Date || '').toString().slice(0, 10),
+          side: isBuy ? 'BUY' : 'SELL',
+          rawPrice, rawQty,
+          adjPrice: (factor !== 1 && rawPrice > 0) ? rawPrice / factor : rawPrice,
+          portfolio: (r.Portfolio || '').trim(),
+        };
+      });
+  }
+
+  const RANGE_DAYS = { '1M': 30, '6M': 182, '1Y': 365, 'ALL': Infinity };
+
+  async function _openStockModal(symbol) {
+    symbol = (symbol || '').toString().trim().toUpperCase();
+    if (!symbol) return;
+    _closeModal();
+
+    // Build overlay shell with a spinner
+    _modalEl = document.createElement('div');
+    _modalEl.className = 'pf-modal-overlay';
+    _modalEl.innerHTML = `
+      <div class="pf-modal" role="dialog" aria-modal="true">
+        <button class="pf-modal-close" title="סגור">✕</button>
+        <div class="pf-modal-loading">
+          <div class="empty-icon" style="margin:0 auto">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <p style="color:var(--text-muted);font-size:13px;margin-top:8px">טוען נתוני ${symbol}...</p>
+        </div>
+      </div>`;
+    document.body.appendChild(_modalEl);
+
+    // Close interactions
+    _modalEl.addEventListener('click', e => { if (e.target === _modalEl) _closeModal(); });
+    _modalEl.querySelector('.pf-modal-close').addEventListener('click', _closeModal);
+    _escHandler = e => { if (e.key === 'Escape') _closeModal(); };
+    document.addEventListener('keydown', _escHandler);
+
+    // Load history (transactions already in memory)
+    let history = [];
+    try { history = await DataService.getStockHistory(symbol); } catch (_) { history = []; }
+    if (!_modalEl) return;   // closed while loading
+
+    const trades = _splitAdjustedTrades(symbol, _portFilter);
+    _modalState = { symbol, history: history || [], trades, range: 'ALL' };
+    _renderModalBody();
+  }
+
+  function _closeModal() {
+    if (_escHandler) { document.removeEventListener('keydown', _escHandler); _escHandler = null; }
+    if (_modalEl && _modalEl.parentNode) _modalEl.parentNode.removeChild(_modalEl);
+    _modalEl = null;
+    _modalState = null;
+  }
+
+  function _renderModalBody() {
+    if (!_modalEl || !_modalState) return;
+    const { symbol, range } = _modalState;
+    const sym = currSym();
+
+    // Position under the active filter (aggregated when 'all')
+    const pos = _visible().find(p => p.symbol === symbol);
+    const rt  = _rtMap[symbol] || {};
+    const chgCls = rt.change == null ? '' : rt.change >= 0 ? 'pos' : 'neg';
+
+    const modal = _modalEl.querySelector('.pf-modal');
+    modal.innerHTML = `
+      <button class="pf-modal-close" title="סגור">✕</button>
+      <div class="pf-modal-head">
+        <span class="pf-sym-badge" style="font-size:15px">${symbol}</span>
+        <div class="pf-modal-price">
+          <span class="pf-price-main ${chgCls}" style="font-size:20px">${rt.price != null ? '$' + fmtMoney(rt.price) : '—'}</span>
+          ${rt.change != null ? `<span class="pf-price-chg ${chgCls}">${fmtPct(rt.change)}</span>` : ''}
+        </div>
+        ${pos ? `<span class="pf-modal-port">${pos.portfolio || ''}</span>` : ''}
+      </div>
+      ${pos ? _renderModalSummary(pos, sym) : '<p class="pf-no-data">הפוזיציה סגורה — מוצגות עסקאות היסטוריות בלבד</p>'}
+      <div class="pf-modal-chart-head">
+        <span class="pf-chart-title">גרף מחיר ונקודות עסקה</span>
+        <div class="pf-range-btns">
+          ${Object.keys(RANGE_DAYS).map(k => `<button class="pf-range-btn${k === range ? ' active' : ''}" data-range="${k}">${k === 'ALL' ? 'הכל' : k.replace('M','ח').replace('Y','ש')}</button>`).join('')}
+        </div>
+      </div>
+      <div class="pf-modal-chart">${_renderStockChart()}</div>
+      <div class="pf-modal-legend">
+        <span><span class="pf-dot" style="background:#059669"></span>קנייה</span>
+        <span><span class="pf-dot" style="background:#DC2626"></span>מכירה</span>
+        <span><span class="pf-dot" style="background:#2563EB"></span>מחיר סגירה</span>
+      </div>
+      ${_renderModalTxns()}`;
+
+    // Rebind close + range buttons (innerHTML replaced)
+    modal.querySelector('.pf-modal-close').addEventListener('click', _closeModal);
+    modal.querySelectorAll('.pf-range-btn').forEach(btn =>
+      btn.addEventListener('click', () => {
+        if (!_modalState) return;
+        _modalState.range = btn.dataset.range;
+        _renderModalBody();
+      })
+    );
+  }
+
+  function _renderModalSummary(pos, sym) {
+    const cells = [
+      ['כמות',        pos.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })],
+      ['עלות ממוצעת', `${sym}${fmtMoney(toDisplay(pos.avgCost))}`],
+      ['שווי שוק',    pos.marketValue != null ? `${sym}${fmtMoney(toDisplay(pos.marketValue))}` : '—'],
+      ['רווח לא ממומש', pos.pnl != null ? `${pos.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(pos.pnl)))}` : '—', pos.pnl == null ? '' : pos.pnl >= 0 ? 'pos' : 'neg'],
+      ['רווח ממומש',  pos.realizedPnl != null ? `${pos.realizedPnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(pos.realizedPnl)))}` : '—', !pos.realizedPnl ? '' : pos.realizedPnl >= 0 ? 'pos' : 'neg'],
+    ];
+    return `<div class="pf-modal-summary">
+      ${cells.map(([l, v, cls]) => `
+        <div class="pf-modal-stat">
+          <span class="pf-modal-stat-lbl">${l}</span>
+          <span class="pf-modal-stat-val ${cls || ''}">${v}</span>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  /* SVG price line + buy/sell markers. Chart is in native USD. */
+  function _renderStockChart() {
+    const { history, trades, range } = _modalState;
+    if (!history || !history.length) return '<p class="pf-no-data">אין היסטוריית מחירים</p>';
+
+    const pts = history
+      .map(h => ({ t: new Date(h.date).getTime(), c: parseFloat(h.close) }))
+      .filter(p => isFinite(p.t) && isFinite(p.c))
+      .sort((a, b) => a.t - b.t);
+    if (!pts.length) return '<p class="pf-no-data">אין היסטוריית מחירים</p>';
+
+    const lastT = pts[pts.length - 1].t;
+    const days  = RANGE_DAYS[range] ?? Infinity;
+    const minT  = days === Infinity ? pts[0].t : lastT - days * 86400000;
+    const vp    = pts.filter(p => p.t >= minT);
+    const series = vp.length ? vp : pts;
+    const vt = trades.filter(tr => tr.date >= series[0].t - 86400000);
+
+    const W = 640, H = 260, padL = 52, padR = 12, padT = 12, padB = 26;
+    const t0 = series[0].t, t1 = series[series.length - 1].t || (t0 + 1);
+    const allC = series.map(p => p.c).concat(vt.map(tr => tr.adjPrice).filter(v => v > 0));
+    let minC = Math.min(...allC), maxC = Math.max(...allC);
+    if (!isFinite(minC) || !isFinite(maxC)) return '<p class="pf-no-data">אין נתונים</p>';
+    const pad = (maxC - minC) * 0.08 || maxC * 0.05 || 1;
+    minC -= pad; maxC += pad;
+
+    const xS = t => padL + ((t - t0) / (t1 - t0 || 1)) * (W - padL - padR);
+    const yS = c => padT + (1 - (c - minC) / (maxC - minC || 1)) * (H - padT - padB);
+
+    // Grid + y labels
+    let grid = '', yLbls = '';
+    for (let i = 0; i <= 4; i++) {
+      const c = minC + ((maxC - minC) / 4) * i;
+      const y = yS(c);
+      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.6"/>`;
+      yLbls += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">$${c.toFixed(0)}</text>`;
+    }
+    // x labels (start / mid / end dates)
+    const fmtD = ms => { const d = new Date(ms); return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`; };
+    let xLbls = '';
+    [0, 0.5, 1].forEach(f => {
+      const t = t0 + (t1 - t0) * f;
+      xLbls += `<text x="${xS(t).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${fmtD(t)}</text>`;
+    });
+
+    const line = series.map((p, i) => `${i ? 'L' : 'M'}${xS(p.t).toFixed(1)} ${yS(p.c).toFixed(1)}`).join(' ');
+    const area = `${line} L${xS(t1).toFixed(1)} ${(H - padB).toFixed(1)} L${xS(t0).toFixed(1)} ${(H - padB).toFixed(1)} Z`;
+
+    const markers = vt.map(tr => {
+      if (!(tr.adjPrice > 0)) return '';
+      const x = xS(tr.date), y = yS(tr.adjPrice);
+      const col = tr.side === 'BUY' ? '#059669' : '#DC2626';
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${col}" stroke="#fff" stroke-width="1.2">
+        <title>${tr.side === 'BUY' ? 'קנייה' : 'מכירה'} ${tr.dateStr} · ${tr.rawQty} @ $${tr.rawPrice.toFixed(2)}</title></circle>`;
+    }).join('');
+
+    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      ${grid}${yLbls}
+      <path d="${area}" fill="rgba(37,99,235,0.07)" stroke="none"/>
+      <path d="${line}" fill="none" stroke="#2563EB" stroke-width="1.6"/>
+      ${markers}${xLbls}
+    </svg>`;
+  }
+
+  function _renderModalTxns() {
+    const { trades } = _modalState;
+    if (!trades.length) return '<p class="pf-no-data">אין עסקאות</p>';
+    const rows = [...trades].sort((a, b) => b.date - a.date).map(tr => `
+      <tr>
+        <td class="pf-td-center">${tr.dateStr}</td>
+        <td class="pf-td-center"><span class="pf-side ${tr.side === 'BUY' ? 'buy' : 'sell'}">${tr.side === 'BUY' ? 'קנייה' : 'מכירה'}</span></td>
+        <td class="pf-td-center pf-td-num">${tr.rawQty.toLocaleString('he-IL', { maximumFractionDigits: 4 })}</td>
+        <td class="pf-td-center pf-td-num">$${fmtMoney(tr.rawPrice)}</td>
+        <td class="pf-td-center pf-td-num">$${fmtMoney(tr.rawQty * tr.rawPrice)}</td>
+        <td class="pf-td-center pf-td-muted">${tr.portfolio}</td>
+      </tr>`).join('');
+    return `
+      <div class="pf-modal-txns-head">היסטוריית עסקאות (${trades.length})</div>
+      <div class="pf-modal-txns-wrap">
+        <table class="pf-table">
+          <thead><tr><th>תאריך</th><th>סוג</th><th>כמות</th><th>מחיר</th><th>שווי</th><th>תיק</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
   }
 
   /* ═══════════════════════════════════════════════════
@@ -609,5 +980,5 @@ Pages.portfolio = (() => {
     });
   }
 
-  return { render, debugFifo };
+  return { render, debugFifo, openStock: _openStockModal };
 })();

@@ -112,13 +112,17 @@ const DataService = (() => {
     return rows;
   }
 
-  /* ---- Public: stock price history (e.g. "TSLA") ---- */
+  /* ---- Public: stock price history (e.g. "TSLA") ----
+     The history endpoint returns { rows: [{date, close, volume}, ...] }
+     (already split-adjusted), NOT a { values: [[...]] } 2D array like the
+     other resources — so we read data.rows directly, no _toObjects.        */
   async function getStockHistory(symbol) {
     const cacheKey = `history_${symbol}`;
     const now = Date.now();
     if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < CACHE_TTL) return _cache[cacheKey];
     const data = await _fetch({ resource: "history", symbol });
-    const rows = _toObjects(data.values);
+    const rows = Array.isArray(data.rows) ? data.rows
+               : (data.values ? _toObjects(data.values) : []);  // fallback for older shape
     _cache[cacheKey] = rows;
     _lastFetch[cacheKey] = now;
     return rows;
@@ -145,11 +149,12 @@ const DataService = (() => {
      Returns the raw API response { values: [[header,...], [row,...], ...] }
      so callers can do index-based header scanning (like New1.html) instead
      of relying on exact column-name matches.                               */
-  async function getRealTimeData() {
+  async function getRealTimeData(force = false) {
     const cacheKey = "realtime";
     const now = Date.now();
     const RT_TTL = 60 * 1000; // 1 min
-    if (_cache[cacheKey] && (now - _lastFetch[cacheKey]) < RT_TTL) return _cache[cacheKey];
+    // force=true bypasses the cache — used by the live-price polling loop.
+    if (!force && _cache[cacheKey] && (now - _lastFetch[cacheKey]) < RT_TTL) return _cache[cacheKey];
     const data = await _fetch({ resource: "realtime" });
     _cache[cacheKey]     = data;   // cache raw { values: [[...]] }
     _lastFetch[cacheKey] = now;
