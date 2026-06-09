@@ -43,197 +43,11 @@ Pages.portfolio = (() => {
   }
 
   /* ═══════════════════════════════════════════════════
-     FIFO Position Calculator  —  mirrors New1.html
-     ─────────────────────────────────────────────────
-     KEY RULES (identical to New1.html):
-     • Only STOCKS category + SPLIT subCategory enter FIFO.
-       BONUS events (negative-qty הטבה, i.e. reverse splits)
-       are intentionally excluded — including them with
-       Math.abs adds shares instead of removing them,
-       leaving "closed" positions as open.
-     • CORPORATE_ACTIONS: pre-FIFO split-factor normalization
-       adjusts historical buy/sell qty+price for known splits
-       (TSLA, NVDA, AMZN, GOOGL, AAPL) so the FIFO ledger
-       operates entirely in current post-split units.
-     • Math.abs on Qty — sell rows often carry negative Qty.
-     • Fallback type detection for UNCLASSIFIED trades.
-     • Key by symbol only (global ledger across all portfolios).
+     Position calculation lives in PortfolioEngine
+     (js/modules/portfolioEngine.js) — a shared, UI-free
+     FIFO engine. See that file for the design rationale
+     (per-portfolio ledger, broker-driven splits, etc.).
      ══════════════════════════════════════════════════ */
-
-  /* ── Historical split table (same as New1.html) ── */
-  const CORPORATE_ACTIONS = {
-    'TSLA':  [{ date: '2022-08-25', ratio: 3 }, { date: '2020-08-31', ratio: 5 }],
-    'AMZN':  [{ date: '2022-06-06', ratio: 20 }],
-    'GOOGL': [{ date: '2022-07-15', ratio: 20 }],
-    'GOOG':  [{ date: '2022-07-15', ratio: 20 }],
-    'NVDA':  [{ date: '2021-07-20', ratio: 4 }, { date: '2024-06-10', ratio: 10 }],
-    'AAPL':  [{ date: '2020-08-31', ratio: 4 }],
-  };
-
-  function _computePositions(transactions) {
-    const ledger = {};
-
-    /* ── Mirror New1's FIFO filter ──
-       Include: STOCKS category (BUY_STOCK / SELL_STOCK) + SPLIT subCategory.
-       Exclude: BONUS (reverse splits with negative qty — do NOT call Math.abs on them).
-       Fallback: UNCLASSIFIED rows that look like trades from raw Type string.        */
-    const relevant = transactions
-      .map((r, _sheetIdx) => ({ ...r, _sheetIdx }))   // preserve original Google Sheet row order
-      .filter(r => {
-        const cat = r.category;
-        const sub = r.subCategory;
-        if (cat === 'STOCKS') return true;   // BUY_STOCK, SELL_STOCK
-        if (sub === 'SPLIT')  return true;   // forward splits (positive qty הטבה)
-        // Fallback for any trade the classifier didn't catch by exact type
-        if (cat === 'UNCLASSIFIED' || !sub) {
-          const t = (r.Type || '').trim().toUpperCase();
-          return t.includes('קני') || t.includes('מכיר');
-        }
-        return false;
-        // *** BONUS is intentionally excluded here ***
-        // Reverse splits arrive as הטבה with negative qty → BONUS.
-        // Including them (even with Math.abs) adds shares and breaks FIFO.
-      })
-      .sort((a, b) => {
-        // 1️⃣ Primary: chronological by date
-        const dateDiff = new Date(a.Date) - new Date(b.Date);
-        if (dateDiff !== 0) return dateDiff;
-
-        // 2️⃣ Same-date tiebreaker: BUY before SELL
-        //    Brokers sometimes store round-trip (day-trade) rows with SELL first.
-        //    A long-only portfolio can't sell before it buys, so BUY must be first.
-        //    This fixes positions that never reach qty=0 (ghost positions).
-        //    Note: total net P&L is unaffected by intra-day ordering — only which
-        //    specific lot is tagged as "sold" changes (relevant for tax reporting).
-        const aIsBuy = a.subCategory === 'BUY_STOCK' || (a.Type||'').includes('קני');
-        const bIsBuy = b.subCategory === 'BUY_STOCK' || (b.Type||'').includes('קני');
-        if (aIsBuy && !bIsBuy) return -1;
-        if (!aIsBuy && bIsBuy) return  1;
-
-        // 3️⃣ Same-date same-type: preserve original Google Sheet row order.
-        //    This keeps the broker's internal chronology (e.g. two buys on the same day
-        //    stay in the order the broker recorded them, giving the most accurate FIFO
-        //    lot assignment possible without intra-day time data).
-        return a._sheetIdx - b._sheetIdx;
-      });
-
-    relevant.forEach(row => {
-      const sym = (row.Symbol || '').toString().trim().toUpperCase();
-      if (!sym || !/^[A-Z]{1,5}$/.test(sym)) return;
-
-      const sub  = row.subCategory;
-      const port = (row.Portfolio || '').trim();
-
-      /* ── SPLIT event: adjust existing lots ── */
-      if (sub === 'SPLIT') {
-        const item = ledger[sym];
-        if (!item || item.qty < 0.001) return;
-
-        const caEntry = CORPORATE_ACTIONS[sym];
-        if (caEntry) {
-          // Symbol is in CORPORATE_ACTIONS: match split by date proximity (±5 days)
-          // Historical buys were already pre-adjusted, so this handles any in-FIFO split
-          const txDate = new Date(row.Date).getTime();
-          const match  = caEntry.find(s => Math.abs(new Date(s.date).getTime() - txDate) < 86400000 * 5);
-          if (match) {
-            item.qty *= match.ratio;
-            item.lots.forEach(l => { l.qty *= match.ratio; l.costPerShare /= match.ratio; });
-          }
-        } else {
-          // Symbol not in CORPORATE_ACTIONS: compute ratio from broker-reported qty
-          const rawQty = Math.abs(n(row.Qty));
-          if (rawQty > 0 && item.qty > 0.001) {
-            const ratio = (item.qty + rawQty) / item.qty;
-            item.qty += rawQty;
-            item.lots.forEach(l => { l.qty *= ratio; l.costPerShare /= ratio; });
-          }
-        }
-        return;
-      }
-
-      /* ── Determine BUY / SELL ── */
-      let action = null;
-      if      (sub === 'BUY_STOCK')  action = 'BUY';
-      else if (sub === 'SELL_STOCK') action = 'SELL';
-      else {
-        const t = (row.Type || '').trim().toUpperCase();
-        if (t.includes('קני'))  action = 'BUY';
-        if (t.includes('מכיר')) action = 'SELL';
-      }
-      if (!action) return;
-
-      // *** Math.abs is critical — sell rows arrive with negative Qty ***
-      let qty   = Math.abs(n(row.Qty));
-      let price = Math.abs(n(row.ExecutionRate));
-      if (!qty) return;
-
-      /* ── Pre-FIFO CORPORATE_ACTIONS split-factor normalization (mirrors New1) ──
-         For symbols with known historical splits, multiply historical qty by the
-         cumulative split factor of all splits that occurred AFTER this transaction.
-         This normalises all quantities to current post-split units so the FIFO
-         ledger stays self-consistent.                                              */
-      const splits = CORPORATE_ACTIONS[sym];
-      if (splits) {
-        const txDate = new Date(row.Date).getTime();
-        let factor = 1;
-        splits.forEach(s => {
-          if (txDate < new Date(s.date).getTime()) factor *= s.ratio;
-        });
-        if (factor !== 1) {
-          qty   = qty * factor;
-          price = price > 0 ? price / factor : 0;
-        }
-      }
-
-      const costPerShare = price > 0
-        ? price
-        : (qty > 0 ? Math.abs(n(row.TotalFX)) / qty : 0);
-
-      if (!ledger[sym]) {
-        ledger[sym] = { symbol: sym, portfolio: port, qty: 0, lots: [] };
-      }
-      const item = ledger[sym];
-      if (port) item.portfolio = port;
-
-      /* ── BUY ── */
-      if (action === 'BUY') {
-        item.qty += qty;
-        item.lots.push({ qty, costPerShare, date: row.Date });
-
-      /* ── SELL (FIFO) ── */
-      } else if (action === 'SELL') {
-        let remaining = qty;
-        while (remaining > 0.0001 && item.lots.length > 0) {
-          if (item.lots[0].qty > remaining) {
-            item.lots[0].qty -= remaining;
-            remaining = 0;
-          } else {
-            remaining -= item.lots[0].qty;
-            item.lots.shift();
-          }
-        }
-        item.qty -= qty;
-        // *** No clamp here — mirrors New1.html exactly ***
-        // If SELL somehow fires before BUY (e.g. due to sort tie-break edge case),
-        // qty goes temporarily negative. The subsequent BUY restores it.
-        // The final filter (p.qty > 0.01) handles all cases — closed positions,
-        // float dust, and any negative remnants.
-      }
-    });
-
-    return Object.values(ledger)
-      .filter(p => p.qty > 0.01)
-      .map(p => {
-        const totalCost = p.lots.reduce((s, l) => s + l.qty * l.costPerShare, 0);
-        return {
-          symbol:    p.symbol,
-          portfolio: p.portfolio,
-          qty:       p.qty,
-          totalCost,
-          avgCost:   p.qty > 0 ? totalCost / p.qty : 0,
-        };
-      });
-  }
 
   /* ── Enrich with real-time prices ── */
   function _enrich(positions) {
@@ -304,7 +118,7 @@ Pages.portfolio = (() => {
       /* Phase 1: transactions (often from cache — fast) */
       const txns    = await DataService.getTransactions();
       _enrichedTxns = Classifier.enrichAll(txns);
-      _positions    = _computePositions(_enrichedTxns);
+      _positions    = PortfolioEngine.computePositions(_enrichedTxns);
 
       if (loading) loading.style.display = 'none';
       if (body) { body.style.display = 'block'; _paint(body); }
@@ -350,7 +164,7 @@ Pages.portfolio = (() => {
         });
       }
 
-      _positions = _enrich(_computePositions(_enrichedTxns));
+      _positions = _enrich(PortfolioEngine.computePositions(_enrichedTxns));
       App.setDataStatus('live');
       if (body) _paint(body);
 
@@ -676,17 +490,20 @@ Pages.portfolio = (() => {
   }
 
   /* ═══════════════════════════════════════════════════
-     FIFO Debugger — Pages.portfolio.debugFifo('TQQQ')
+     FIFO Debugger — Pages.portfolio.debugFifo('TSLA')
      Traces every transaction for a symbol through the
-     FIFO filter so you can see exactly what's included,
-     what's excluded, and the running qty at each step.
+     engine logic, PER PORTFOLIO, so you can see exactly
+     what's included, excluded, and the running qty at
+     each step (matching PortfolioEngine.computePositions).
      ══════════════════════════════════════════════════ */
   function debugFifo(symbols) {
     if (!_enrichedTxns || !_enrichedTxns.length) {
       console.warn('debugFifo: no enriched transactions yet — navigate to the portfolio page first.');
       return;
     }
+    const num = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
     const list = Array.isArray(symbols) ? symbols : [symbols];
+
     list.forEach(sym => {
       const target = sym.trim().toUpperCase();
       const rows   = _enrichedTxns
@@ -695,44 +512,57 @@ Pages.portfolio = (() => {
 
       if (!rows.length) { console.warn(`debugFifo: no transactions found for ${target}`); return; }
 
-      console.group(`🔍 FIFO trace: ${target} (${rows.length} total rows)`);
+      // Trace each portfolio separately — the engine keys by (portfolio, symbol).
+      const ports = [...new Set(rows.map(r => (r.Portfolio || '').trim()))];
 
-      let runningQty = 0;
-      rows.forEach(r => {
-        const cat = r.category, sub = r.subCategory;
-        const inFifo = (cat === 'STOCKS') || (sub === 'SPLIT') ||
-          ((cat === 'UNCLASSIFIED' || !sub) && ((r.Type||'').includes('קני') || (r.Type||'').includes('מכיר')));
+      ports.forEach(port => {
+        const pRows = rows.filter(r => (r.Portfolio || '').trim() === port);
+        console.group(`🔍 FIFO trace: ${target} @ ${port || '(no portfolio)'} (${pRows.length} rows)`);
 
-        const rawQty  = parseFloat((r.Qty          ||'0').toString().replace(/[^\d.-]/g,'')) || 0;
-        const rawRate = parseFloat((r.ExecutionRate ||'0').toString().replace(/[^\d.-]/g,'')) || 0;
-        const absQty  = Math.abs(rawQty);
+        let runningQty = 0;
+        pRows.forEach(r => {
+          const cat = r.category, sub = r.subCategory;
+          const inFifo = (cat === 'STOCKS') || (sub === 'SPLIT') ||
+            ((cat === 'UNCLASSIFIED' || !sub) && ((r.Type||'').includes('קני') || (r.Type||'').includes('מכיר')));
 
-        // Replicate the exact FIFO logic for running qty
-        if (inFifo && sub !== 'SPLIT') {
-          let action = null;
-          if      (sub === 'BUY_STOCK')  action = 'BUY';
-          else if (sub === 'SELL_STOCK') action = 'SELL';
-          else {
-            const t = (r.Type||'').toUpperCase();
-            if (t.includes('קני'))  action = 'BUY';
-            if (t.includes('מכיר')) action = 'SELL';
+          const rawQty = num(r.Qty), absQty = Math.abs(rawQty), rawRate = num(r.ExecutionRate);
+
+          let note = '';
+          if (inFifo && sub === 'SPLIT') {
+            // Broker-driven split: ratio derived from the reported share delta.
+            if (runningQty > 0.001 && absQty > 0) {
+              const ratio = (runningQty + absQty) / runningQty;
+              runningQty += absQty;
+              note = `SPLIT ×${ratio.toFixed(3)} (broker +${absQty})`;
+            } else {
+              note = 'SPLIT skipped (no open qty)';
+            }
+          } else if (inFifo) {
+            let action = null;
+            if      (sub === 'BUY_STOCK')  action = 'BUY';
+            else if (sub === 'SELL_STOCK') action = 'SELL';
+            else {
+              const t = (r.Type||'');
+              if (t.includes('קני'))  action = 'BUY';
+              if (t.includes('מכיר')) action = 'SELL';
+            }
+            if (action === 'BUY')  runningQty += absQty;
+            if (action === 'SELL') { runningQty -= absQty; if (runningQty < -0.0001) runningQty = 0; }
           }
-          if (action === 'BUY')  runningQty += absQty;
-          if (action === 'SELL') { runningQty -= absQty; if (runningQty < 0.001) runningQty = 0; }
-        }
 
-        const flag   = inFifo ? '✅' : '⛔';
-        const qtyStr = rawQty !== absQty ? `${rawQty} (abs ${absQty})` : `${rawQty}`;
-        console.log(
-          flag, r.Date, `"${r.Type}"`,
-          `[${cat} / ${sub}]`,
-          `qty=${qtyStr}  rate=${rawRate}`,
-          inFifo ? `→ running qty: ${runningQty.toFixed(4)}` : ''
-        );
+          const flag   = inFifo ? '✅' : '⛔';
+          const qtyStr = rawQty !== absQty ? `${rawQty} (abs ${absQty})` : `${rawQty}`;
+          console.log(
+            flag, (r.Date || '').toString().slice(0, 10), `"${r.Type}"`,
+            `[${cat} / ${sub}]`,
+            `qty=${qtyStr}  rate=${rawRate}`,
+            inFifo ? `→ running qty: ${runningQty.toFixed(4)}${note ? '  ' + note : ''}` : ''
+          );
+        });
+
+        console.log(`%cFinal qty: ${runningQty.toFixed(4)}`, 'font-weight:bold;color:' + (runningQty > 0.01 ? 'orange' : 'green'));
+        console.groupEnd();
       });
-
-      console.log(`%cFinal qty after FIFO: ${runningQty.toFixed(4)}`, 'font-weight:bold;color:' + (runningQty > 0.01 ? 'orange' : 'green'));
-      console.groupEnd();
     });
   }
 
