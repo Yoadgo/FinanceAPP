@@ -650,13 +650,25 @@ Pages.portfolio = (() => {
      ══════════════════════════════════════════════════ */
   let _modalState = null;   // { symbol, history, trades, range }
 
-  /* All STOCKS + SPLIT rows for a symbol, chronological. */
+  /* All STOCKS + SPLIT rows for a symbol, ordered EXACTLY like the FIFO engine:
+     date → BUY/SPLIT before SELL (same day) → original sheet order.
+     The same-day BUY-before-SELL tiebreak is critical: with heavy intraday
+     round-trips (e.g. IREN), a SELL processed before its matching BUY would
+     sell against an empty lot book and fabricate huge phantom realized gains. */
   function _symbolRows(symbol) {
     return _enrichedTxns
       .filter(r => (r.Symbol || '').toString().trim().toUpperCase() === symbol)
       .filter(r => r.category === 'STOCKS' || r.subCategory === 'SPLIT')
       .map((r, i) => ({ ...r, _i: i }))
-      .sort((a, b) => (new Date(a.Date) - new Date(b.Date)) || (a._i - b._i));
+      .sort((a, b) => {
+        const d = new Date(a.Date) - new Date(b.Date);
+        if (d !== 0) return d;
+        const aBuy = a.subCategory === 'BUY_STOCK' || a.subCategory === 'SPLIT' || (a.Type || '').includes('קני');
+        const bBuy = b.subCategory === 'BUY_STOCK' || b.subCategory === 'SPLIT' || (b.Type || '').includes('קני');
+        if (aBuy && !bBuy) return -1;
+        if (!aBuy && bBuy) return  1;
+        return a._i - b._i;
+      });
   }
 
   /* Split events as [{date(ms), ratio}], derived from broker הטבה rows.
