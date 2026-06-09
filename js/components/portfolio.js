@@ -800,13 +800,50 @@ Pages.portfolio = (() => {
     );
   }
 
+  /* Lifetime realized P&L for a symbol (all sells ever), scoped by filter.
+     Independent of current holdings — includes fully-closed history. Combined
+     FIFO across portfolios when filter is 'all' (matches the integrated view). */
+  function _realizedFor(symbol, portFilter) {
+    const rows = _symbolRows(symbol)
+      .filter(r => portFilter === 'all' || (r.Portfolio || '').trim() === portFilter);
+    let lots = [], realized = 0, qty = 0;
+    rows.forEach(r => {
+      const q = Math.abs(n(r.Qty));
+      if (r.subCategory === 'SPLIT') {
+        if (qty > 0.001 && q > 0) {
+          const ratio = (qty + q) / qty; qty += q;
+          lots.forEach(l => { l.qty *= ratio; l.cps /= ratio; });
+        }
+        return;
+      }
+      if (!q) return;
+      const isBuy = r.subCategory === 'BUY_STOCK' || (r.Type || '').includes('קני');
+      const price = Math.abs(n(r.ExecutionRate));
+      const cps   = price > 0 ? price : Math.abs(n(r.TotalFX)) / q;
+      if (isBuy) { lots.push({ qty: q, cps }); qty += q; }
+      else {
+        let rem = q, cost = 0;
+        while (rem > 0.0001 && lots.length) {
+          const lot = lots[0];
+          if (lot.qty > rem) { cost += rem * lot.cps; lot.qty -= rem; rem = 0; }
+          else { cost += lot.qty * lot.cps; rem -= lot.qty; lots.shift(); }
+        }
+        realized += q * price - cost;
+        qty -= q;
+        if (qty < -0.0001) { qty = 0; lots = []; }
+      }
+    });
+    return realized;
+  }
+
   function _renderModalSummary(pos, sym) {
+    const realized = _realizedFor(_modalState.symbol, _portFilter);
     const cells = [
-      ['כמות',        pos.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })],
-      ['עלות ממוצעת', `${sym}${fmtMoney(toDisplay(pos.avgCost))}`],
-      ['שווי שוק',    pos.marketValue != null ? `${sym}${fmtMoney(toDisplay(pos.marketValue))}` : '—'],
-      ['רווח לא ממומש', pos.pnl != null ? `${pos.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(pos.pnl)))}` : '—', pos.pnl == null ? '' : pos.pnl >= 0 ? 'pos' : 'neg'],
-      ['רווח ממומש',  pos.realizedPnl != null ? `${pos.realizedPnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(pos.realizedPnl)))}` : '—', !pos.realizedPnl ? '' : pos.realizedPnl >= 0 ? 'pos' : 'neg'],
+      ['כמות',          pos.qty.toLocaleString('he-IL', { maximumFractionDigits: 4 })],
+      ['עלות ממוצעת',   `${sym}${fmtMoney(toDisplay(pos.avgCost))}`],
+      ['שווי שוק',      pos.marketValue != null ? `${sym}${fmtMoney(toDisplay(pos.marketValue))}` : '—'],
+      ['רווח לא ממומש (פוטנציאל)', pos.pnl != null ? `${pos.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(pos.pnl)))}` : '—', pos.pnl == null ? '' : pos.pnl >= 0 ? 'pos' : 'neg'],
+      ['רווח ממומש (סה״כ אי-פעם)', `${realized >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(toDisplay(realized)))}`, Math.abs(realized) < 0.005 ? '' : realized >= 0 ? 'pos' : 'neg'],
     ];
     return `<div class="pf-modal-summary">
       ${cells.map(([l, v, cls]) => `
