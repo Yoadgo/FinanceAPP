@@ -63,8 +63,51 @@ Pages.portfolio = (() => {
   }
 
   function _visible() {
-    if (_portFilter === 'all') return _positions;
+    if (_portFilter === 'all') return _aggregateBySymbol(_positions);
     return _positions.filter(p => p.portfolio === _portFilter);
+  }
+
+  /* ── Integrated "all portfolios" view ──
+     Merge positions that share a ticker across portfolios into a single
+     holding (e.g. TSLA 150 in איביאי-יועד + 55 in איביאי-דר → one 205-share
+     line). Quantities and cost basis sum; avg cost is re-weighted; market
+     value and P&L are recomputed from the combined qty so every figure is
+     consistent with a single 205-share position. The per-portfolio split
+     is still available via the portfolio filter. */
+  function _aggregateBySymbol(positions) {
+    const map = {};
+    positions.forEach(p => {
+      let a = map[p.symbol];
+      if (!a) {
+        a = map[p.symbol] = {
+          symbol: p.symbol, qty: 0, totalCost: 0, lots: [],
+          realizedPnl: 0, currentPrice: null, changePercent: null, _ports: new Set(),
+        };
+      }
+      a.qty       += p.qty;
+      a.totalCost += p.totalCost;
+      a.realizedPnl += p.realizedPnl || 0;
+      if (Array.isArray(p.lots)) a.lots = a.lots.concat(p.lots);
+      // Price/change are per-symbol (identical across portfolios) — take first non-null.
+      if (a.currentPrice  === null && (p.currentPrice  ?? null) !== null) a.currentPrice  = p.currentPrice;
+      if (a.changePercent === null && (p.changePercent ?? null) !== null) a.changePercent = p.changePercent;
+      if (p.portfolio) a._ports.add(p.portfolio);
+    });
+
+    return Object.values(map).map(a => {
+      const avgCost     = a.qty > 0 ? a.totalCost / a.qty : 0;
+      const marketValue = a.currentPrice !== null ? a.qty * a.currentPrice : null;
+      const pnl         = marketValue !== null ? marketValue - a.totalCost : null;
+      const pnlPct      = a.totalCost > 0 && pnl !== null ? (pnl / a.totalCost) * 100 : null;
+      return {
+        symbol: a.symbol,
+        portfolio: [...a._ports].join(', '),   // shows which portfolios the holding spans
+        qty: a.qty, totalCost: a.totalCost, avgCost,
+        lots: a.lots, realizedPnl: a.realizedPnl,
+        currentPrice: a.currentPrice, changePercent: a.changePercent,
+        marketValue, pnl, pnlPct,
+      };
+    });
   }
 
   function _macros(positions) {
