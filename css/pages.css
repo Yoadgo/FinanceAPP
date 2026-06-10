@@ -1,0 +1,51 @@
+/* ===== SHARED PAGE STYLES (dashboard / cashflow / performance) ===== */
+
+/* ── Dashboard hero (net worth) ── */
+.db-hero {
+  background: linear-gradient(135deg, #2563EB 0%, #1E40AF 100%);
+  color: #fff;
+  border-radius: var(--radius-md);
+  padding: 24px 26px;
+  margin-bottom: 14px;
+}
+.db-hero-label { font-size: 13px; opacity: 0.85; font-weight: 500; }
+.db-hero-value {
+  font-size: 36px;
+  font-weight: 800;
+  font-family: 'Roboto Mono', monospace;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+  line-height: 1.1;
+}
+.db-hero-sub { font-size: 13px; opacity: 0.85; margin-top: 8px; }
+
+/* ── Quick-link cards ── */
+.db-links {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.db-link {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.db-link:hover {
+  border-color: #2563EB;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(37,99,235,0.12);
+}
+.db-link-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.db-link-sub   { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+
+@media (max-width: 768px) {
+  .db-hero-value { font-size: 28px; }
+  .db-links { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .db-links { grid-template-columns: 1fr; }
+}

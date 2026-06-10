@@ -179,5 +179,77 @@ const PortfolioEngine = (() => {
       });
   }
 
-  return { computePositions };
+  /* ═══════════════════════════════════════════════════
+     computeClosedTrades — realized round-trips (FIFO)
+     ─────────────────────────────────────────────────
+     Every SELL is matched against the oldest open lots; each produces a
+     closed-trade record with cost basis, proceeds, P&L, %, and the
+     quantity-weighted average holding period. Keyed per (portfolio, symbol),
+     same split handling as computePositions. Used by the performance page.
+     ══════════════════════════════════════════════════ */
+  function computeClosedTrades(transactions) {
+    const books = {};   // key `${portfolio}|${symbol}` → { lots: [{qty,cps,date}] }
+    const trades = [];
+    const relevant = _sorted(transactions.filter(_isRelevant));
+
+    relevant.forEach(row => {
+      const sym = (row.Symbol || '').toString().trim().toUpperCase();
+      if (!sym || !isTicker(sym)) return;
+      const port = (row.Portfolio || '').trim();
+      const key  = `${port}|${sym}`;
+      if (!books[key]) books[key] = { lots: [] };
+      const b = books[key];
+
+      if (row.subCategory === 'SPLIT') {
+        const delta = Math.abs(n(row.Qty));
+        const held  = b.lots.reduce((s, l) => s + l.qty, 0);
+        if (held > 0.001 && delta > 0) {
+          const ratio = (held + delta) / held;
+          b.lots.forEach(l => { l.qty *= ratio; l.cps /= ratio; });
+        }
+        return;
+      }
+
+      const action = _action(row);
+      if (!action) return;
+      const qty   = Math.abs(n(row.Qty));
+      const price = Math.abs(n(row.ExecutionRate));
+      if (!qty) return;
+      const cps = price > 0 ? price : Math.abs(n(row.TotalFX)) / qty;
+
+      if (action === 'BUY') {
+        b.lots.push({ qty, cps, date: row.Date });
+      } else {
+        let remaining = qty, cost = 0, weightedDays = 0;
+        const sellMs = new Date(row.Date).getTime();
+        while (remaining > 0.0001 && b.lots.length > 0) {
+          const lot  = b.lots[0];
+          const take = Math.min(lot.qty, remaining);
+          cost         += take * lot.cps;
+          weightedDays += take * ((sellMs - new Date(lot.date).getTime()) / 86400000);
+          lot.qty      -= take;
+          remaining    -= take;
+          if (lot.qty < 0.0001) b.lots.shift();
+        }
+        const filled   = qty - remaining;
+        if (filled <= 0.0001) return;     // sell with no matching buy — skip
+        const proceeds = filled * price;
+        trades.push({
+          symbol: sym, portfolio: port,
+          sellDate: row.Date,
+          qty: filled,
+          buyAvg:  cost / filled,
+          sellPrice: price,
+          cost, proceeds,
+          pnl: proceeds - cost,
+          pnlPct: cost > 0 ? ((proceeds - cost) / cost) * 100 : 0,
+          holdDays: filled > 0 ? weightedDays / filled : 0,
+        });
+      }
+    });
+
+    return trades.sort((a, b) => new Date(b.sellDate) - new Date(a.sellDate));
+  }
+
+  return { computePositions, computeClosedTrades };
 })();
