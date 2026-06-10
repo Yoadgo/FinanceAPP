@@ -15,7 +15,7 @@
 /* ── Macro Cards ── */
 .pf-macros-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -450,11 +450,7 @@
 /* ── Mobile overrides ── */
 @media (max-width: 768px) {
   .pf-macros-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .pf-macros-row .pf-macro-card:last-child {
-    grid-column: span 2;
+    grid-template-columns: 1fr 1fr;   /* 4 cards → 2×2 on mobile */
   }
 
   .pf-macro-value { font-size: 18px; }
@@ -472,7 +468,6 @@
 
 @media (max-width: 480px) {
   .pf-macros-row { grid-template-columns: 1fr; }
-  .pf-macros-row .pf-macro-card:last-child { grid-column: span 1; }
 }
 
 /* ── Allow the holdings table to scroll horizontally if cramped ── */

@@ -16,7 +16,7 @@ Pages.portfolio = (() => {
   let _escHandler   = null;   // Esc-to-close listener
   let _visHandler   = null;   // visibilitychange listener ref
 
-  const POLL_MS = 10000;      // live price refresh cadence
+  const POLL_MS = 5000;       // live price refresh cadence (faster = feels more live)
 
   /* ── Helpers ── */
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
@@ -118,15 +118,23 @@ Pages.portfolio = (() => {
   }
 
   function _macros(positions) {
-    let totalValue = 0, totalCost = 0, priced = 0;
+    let totalValue = 0, totalCost = 0, priced = 0, dayChange = 0;
     positions.forEach(p => {
       totalCost  += p.totalCost;
-      totalValue += p.marketValue !== null ? p.marketValue : p.totalCost;
-      if (p.marketValue !== null) priced++;
+      const mv = p.marketValue !== null && p.marketValue !== undefined ? p.marketValue : null;
+      totalValue += mv !== null ? mv : p.totalCost;
+      if (mv !== null) priced++;
+      // Today's $ change on this holding: mv already reflects today's move,
+      // so the day's gain = mv − mv/(1+chg%) = mv·chg/(100+chg).
+      if (mv !== null && p.changePercent !== null && p.changePercent !== undefined && (100 + p.changePercent) !== 0) {
+        dayChange += mv * (p.changePercent / (100 + p.changePercent));
+      }
     });
-    const pnl    = totalValue - totalCost;
-    const pnlPct = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
-    return { totalValue, totalCost, pnl, pnlPct, count: positions.length, priced };
+    const pnl          = totalValue - totalCost;
+    const pnlPct       = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+    const prevValue    = totalValue - dayChange;
+    const dayChangePct = prevValue > 0 ? (dayChange / prevValue) * 100 : 0;
+    return { totalValue, totalCost, pnl, pnlPct, dayChange, dayChangePct, count: positions.length, priced };
   }
 
   /* ═══════════════════════════════════════════════════
@@ -306,24 +314,28 @@ Pages.portfolio = (() => {
   }
 
   function _patchMacros(m, sym) {
+    const set = (macro, valText, subText, color) => {
+      const card = _container.querySelector(`.pf-macro-card[data-macro="${macro}"]`);
+      if (!card) return;
+      const v = card.querySelector('.pf-macro-value');
+      const s = card.querySelector('.pf-macro-sub');
+      if (v) { v.textContent = valText; if (color) v.style.color = color; }
+      if (s) { s.textContent = subText; if (color) s.style.color = color; }
+    };
     const tv  = toDisplay(m.totalValue);
     const tc  = toDisplay(m.totalCost);
     const pnl = toDisplay(m.pnl);
-    const cards = _container.querySelectorAll('.pf-macro-card');
-    if (cards[0]) {
-      const v = cards[0].querySelector('.pf-macro-value');
-      const s = cards[0].querySelector('.pf-macro-sub');
-      if (v) v.textContent = `${sym}${tv !== null ? fmtMoney(tv) : '—'}`;
-      if (s) s.textContent = `עלות: ${sym}${tc !== null ? fmtMoney(tc) : '—'}`;
-    }
-    if (cards[1]) {
-      const color = m.pnl >= 0 ? 'var(--success)' : 'var(--danger)';
-      const sign  = m.pnl >= 0 ? '+' : '−';
-      const v = cards[1].querySelector('.pf-macro-value');
-      const s = cards[1].querySelector('.pf-macro-sub');
-      if (v) { v.textContent = pnl !== null ? `${sign}${sym}${fmtMoney(Math.abs(pnl))}` : '—'; v.style.color = color; }
-      if (s) { s.textContent = fmtPct(m.pnlPct); s.style.color = color; }
-    }
+    const day = toDisplay(m.dayChange);
+
+    set('value', `${sym}${tv !== null ? fmtMoney(tv) : '—'}`, `עלות: ${sym}${tc !== null ? fmtMoney(tc) : '—'}`);
+    set('day',
+        day !== null ? `${m.dayChange >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(day))}` : '—',
+        fmtPct(m.dayChangePct),
+        m.dayChange >= 0 ? 'var(--success)' : 'var(--danger)');
+    set('pnl',
+        pnl !== null ? `${m.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(Math.abs(pnl))}` : '—',
+        fmtPct(m.pnlPct),
+        m.pnl >= 0 ? 'var(--success)' : 'var(--danger)');
   }
 
   /* ═══════════════════════════════════════════════════
@@ -372,25 +384,35 @@ Pages.portfolio = (() => {
     const tv       = toDisplay(m.totalValue);
     const tc       = toDisplay(m.totalCost);
     const pnl      = toDisplay(m.pnl);
+    const day      = toDisplay(m.dayChange);
     const pnlColor = m.pnl >= 0 ? 'var(--success)' : 'var(--danger)';
     const pnlSign  = m.pnl >= 0 ? '+' : '−';
+    const dayColor = m.dayChange >= 0 ? 'var(--success)' : 'var(--danger)';
+    const daySign  = m.dayChange >= 0 ? '+' : '−';
     const noPrice  = m.count - m.priced;
 
     return `
       <div class="pf-macros-row">
-        <div class="pf-macro-card">
+        <div class="pf-macro-card" data-macro="value">
           <div class="pf-macro-label">שווי תיק כולל</div>
           <div class="pf-macro-value">${sym}${tv !== null ? fmtMoney(tv) : '—'}</div>
           <div class="pf-macro-sub">עלות: ${sym}${tc !== null ? fmtMoney(tc) : '—'}</div>
         </div>
-        <div class="pf-macro-card">
-          <div class="pf-macro-label">רווח / הפסד לא ממומש</div>
+        <div class="pf-macro-card" data-macro="day">
+          <div class="pf-macro-label">שינוי יומי</div>
+          <div class="pf-macro-value" style="color:${dayColor}">
+            ${day !== null ? `${daySign}${sym}${fmtMoney(Math.abs(day))}` : '—'}
+          </div>
+          <div class="pf-macro-sub" style="color:${dayColor}">${fmtPct(m.dayChangePct)}</div>
+        </div>
+        <div class="pf-macro-card" data-macro="pnl">
+          <div class="pf-macro-label">רווח / הפסד כללי</div>
           <div class="pf-macro-value" style="color:${pnlColor}">
             ${pnl !== null ? `${pnlSign}${sym}${fmtMoney(Math.abs(pnl))}` : '—'}
           </div>
           <div class="pf-macro-sub" style="color:${pnlColor}">${fmtPct(m.pnlPct)}</div>
         </div>
-        <div class="pf-macro-card">
+        <div class="pf-macro-card" data-macro="count">
           <div class="pf-macro-label">פוזיציות פתוחות</div>
           <div class="pf-macro-value">${m.count}</div>
           <div class="pf-macro-sub">${noPrice > 0 ? `${noPrice} ללא שער` : 'כולן עם שער'}</div>
