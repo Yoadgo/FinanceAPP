@@ -66,6 +66,27 @@ const Analytics = (() => {
     };
   }
 
+  /* Tax breakdown (USD) overall + per calendar year. */
+  function taxSummary(txns, fx) {
+    const SUB = { CAPITAL_GAIN_TAX: 'capitalGain', DIVIDEND_TAX: 'dividend', TAX_PAYMENT: 'payment', TAX_REFUND: 'refund', TAX_PROVISION: 'provision' };
+    const totals = { capitalGain: 0, dividend: 0, payment: 0, refund: 0, provision: 0 };
+    const years = {};
+    (txns || []).forEach(r => {
+      const bucket = SUB[r.subCategory];
+      if (!bucket) return;
+      let amt = _usd(r, fx);
+      if (r.subCategory === 'TAX_PROVISION') amt = fx ? Math.abs(n(r.Qty)) / fx : Math.abs(n(r.Qty));
+      totals[bucket] += amt;
+      const y = new Date(r.Date).getFullYear();
+      if (isFinite(y)) {
+        if (!years[y]) years[y] = { year: y, capitalGain: 0, dividend: 0, payment: 0, refund: 0, provision: 0 };
+        years[y][bucket] += amt;
+      }
+    });
+    totals.totalTax = totals.capitalGain + totals.dividend;   // withheld at source
+    return { ...totals, byYear: Object.values(years).sort((a, b) => b.year - a.year) };
+  }
+
   /* Current cash balance (ILS) = most recent row's running CashBalanceILS. */
   function latestCashILS(txns) {
     let best = null, bestTs = -Infinity;
@@ -77,5 +98,5 @@ const Analytics = (() => {
     return best;   // null if unknown
   }
 
-  return { cashSummary, latestCashILS };
+  return { cashSummary, taxSummary, latestCashILS };
 })();

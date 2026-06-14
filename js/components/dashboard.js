@@ -70,6 +70,18 @@ Pages.dashboard = (() => {
       const cash = Analytics.cashSummary(enriched, _fxRate);
       const closed = PortfolioEngine.computeClosedTrades(enriched);
       const realized = closed.reduce((s, t) => s + t.pnl, 0);
+
+      // Equity curve: fetch price history for every traded symbol, then build
+      // the cash / realized / unrealized time series.
+      const symbols = [...new Set(enriched
+        .filter(r => r.category === 'STOCKS')
+        .map(r => (r.Symbol || '').toString().trim().toUpperCase())
+        .filter(s => /^[A-Z]{1,5}$/.test(s)))];
+      const historyMap = {};
+      await Promise.all(symbols.map(async s => {
+        try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
+      }));
+      const curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate);
       const cashILS = Analytics.latestCashILS(txns);
       const cashUSD = cashILS == null ? null : (_fxRate ? cashILS / _fxRate : cashILS);
 
@@ -78,7 +90,7 @@ Pages.dashboard = (() => {
         unrealized: mktVal - cost,
         unrealizedPct: cost > 0 ? ((mktVal - cost) / cost) * 100 : 0,
         dayChangePct: (mktVal - dayChange) > 0 ? (dayChange / (mktVal - dayChange)) * 100 : 0,
-        realized, cash, cashUSD,
+        realized, cash, cashUSD, curve,
         netWorth: mktVal + (cashUSD || 0),
       };
       App.setDataStatus('live');
@@ -135,9 +147,66 @@ Pages.dashboard = (() => {
         ${_link('journal', 'יומן תנועות', 'כל התנועות הגולמיות')}
       </div>`;
 
-    _container.innerHTML = hero + row1 + row2 + links;
+    const chart = `
+      <div class="pf-chart-card" style="margin-top:14px">
+        <div class="pf-chart-title">התפתחות לאורך זמן — מזומן, רווח ממומש ופוטנציאלי</div>
+        ${_renderEquityChart()}
+        <div class="pf-bar-legend" style="margin-top:6px">
+          <span><span class="pf-leg-dot" style="background:#2563EB"></span>מזומן</span>
+          <span><span class="pf-leg-dot" style="background:#059669"></span>רווח ממומש (מצטבר)</span>
+          <span><span class="pf-leg-dot" style="background:#D97706"></span>רווח פוטנציאלי (לא ממומש)</span>
+        </div>
+      </div>`;
+
+    _container.innerHTML = hero + row1 + chart + row2 + links;
     _container.querySelectorAll('.db-link').forEach(el =>
       el.addEventListener('click', () => App.navigateTo(el.dataset.page)));
+  }
+
+  /* Multi-line time chart: cash / realized / unrealized. */
+  function _renderEquityChart() {
+    const pts = (_state.curve || []).filter(p => isFinite(p.t));
+    if (pts.length < 2) return '<p class="pf-no-data">אין מספיק היסטוריה להצגת גרף</p>';
+
+    const series = [
+      { key: 'cash',       color: '#2563EB' },
+      { key: 'realized',   color: '#059669' },
+      { key: 'unrealized', color: '#D97706' },
+    ];
+    const val = (p, k) => toDisplay(p[k]) ?? 0;
+
+    const W = 900, H = 280, padL = 60, padR = 14, padT = 12, padB = 26;
+    const t0 = pts[0].t, t1 = pts[pts.length - 1].t || (t0 + 1);
+    let lo = Infinity, hi = -Infinity;
+    pts.forEach(p => series.forEach(s => { const v = val(p, s.key); if (v < lo) lo = v; if (v > hi) hi = v; }));
+    if (lo > 0) lo = 0;                  // include zero baseline
+    if (hi < 0) hi = 0;
+    const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+
+    const xS = t => padL + ((t - t0) / (t1 - t0 || 1)) * (W - padL - padR);
+    const yS = v => padT + (1 - (v - lo) / (hi - lo || 1)) * (H - padT - padB);
+
+    const sym = currSym();
+    let grid = '', yLbls = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = lo + ((hi - lo) / 4) * i, y = yS(v);
+      const lbl = Math.abs(v) >= 1000 ? `${sym}${(v / 1000).toFixed(0)}K` : `${sym}${v.toFixed(0)}`;
+      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.6"/>`;
+      yLbls += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${lbl}</text>`;
+    }
+    const y0 = yS(0);
+    const zero = (0 >= lo && 0 <= hi) ? `<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W - padR}" y2="${y0.toFixed(1)}" stroke="var(--text-muted)" stroke-width="0.8" stroke-dasharray="3 3"/>` : '';
+
+    const lines = series.map(s => {
+      const d = pts.map((p, i) => `${i ? 'L' : 'M'}${xS(p.t).toFixed(1)} ${yS(val(p, s.key)).toFixed(1)}`).join(' ');
+      return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.8"/>`;
+    }).join('');
+
+    const fmtD = ms => { const d = new Date(ms); return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
+    let xLbls = '';
+    [0, 0.5, 1].forEach(f => { const t = t0 + (t1 - t0) * f; xLbls += `<text x="${xS(t).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${fmtD(t)}</text>`; });
+
+    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:280px">${grid}${zero}${yLbls}${lines}${xLbls}</svg>`;
   }
 
   function _link(page, title, sub) {

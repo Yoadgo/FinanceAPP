@@ -251,5 +251,140 @@ const PortfolioEngine = (() => {
     return trades.sort((a, b) => new Date(b.sellDate) - new Date(a.sellDate));
   }
 
-  return { computePositions, computeClosedTrades };
+  /* ═══════════════════════════════════════════════════
+     computeEquityCurve — time series of cash / realized / unrealized
+     ─────────────────────────────────────────────────
+     Reconstructs, at a monthly grid from the first trade to today:
+       • cash       — running cash (USD) from all flows (buys/sells, deposits,
+                      dividends, interest, fees, taxes).
+       • realized   — cumulative realized P&L from closed round-trips.
+       • unrealized — holdings market value − cost basis, valued with each
+                      symbol's split-adjusted historical close on that date.
+     historyMap: { SYMBOL: [{date, close}, ...] }. fxRate converts ILS flows.
+     ══════════════════════════════════════════════════ */
+  function _usdAmt(r, fx) {
+    const f = n(r.TotalFX);
+    if (Math.abs(f) > 0.001) return Math.abs(f);
+    const ils = n(r.TotalILS);
+    if (Math.abs(ils) > 0.001) return fx ? Math.abs(ils) / fx : Math.abs(ils);
+    return 0;
+  }
+
+  function computeEquityCurve(txns, historyMap, fxRate) {
+    if (!txns || !txns.length) return [];
+    const relevant = _sorted(txns.filter(_isRelevant)).filter(r => {
+      const s = (r.Symbol || '').toString().trim().toUpperCase();
+      return s && isTicker(s);
+    });
+    if (!relevant.length) return [];
+
+    // Split events per symbol (date,ratio), derived from broker rows.
+    const runQ = {}, splitEv = {}, seen = new Set();
+    relevant.forEach(r => {
+      const sym = r.Symbol.toString().trim().toUpperCase();
+      const key = `${(r.Portfolio || '').trim()}|${sym}`;
+      const q = Math.abs(n(r.Qty));
+      if (r.subCategory === 'SPLIT') {
+        const held = runQ[key] || 0;
+        if (held > 0.001 && q > 0) {
+          const dk = `${sym}|${(r.Date || '').toString().slice(0, 10)}`;
+          if (!seen.has(dk)) { (splitEv[sym] = splitEv[sym] || []).push({ t: new Date(r.Date).getTime(), ratio: (held + q) / held }); seen.add(dk); }
+          runQ[key] = held + q;
+        }
+        return;
+      }
+      const act = _action(r); if (!act || !q) return;
+      runQ[key] = (runQ[key] || 0) + (act === 'BUY' ? q : -q);
+    });
+    const factorAfter = (sym, t) => { let f = 1; (splitEv[sym] || []).forEach(e => { if (e.t > t) f *= e.ratio; }); return f; };
+
+    // Realized (cumulative) from closed trades.
+    const closedAsc = computeClosedTrades(txns)
+      .map(c => ({ t: new Date(c.sellDate).getTime(), pnl: c.pnl }))
+      .sort((a, b) => a.t - b.t);
+
+    // Cash = the broker's actual running CashBalanceILS (→USD), not a
+    // reconstruction — so the line matches the real account balance.
+    const cashBal = txns
+      .map(r => ({ t: new Date(r.Date).getTime(), ils: n(r.CashBalanceILS) }))
+      .filter(x => isFinite(x.t) && Math.abs(x.ils) > 0.0001)
+      .sort((a, b) => a.t - b.t);
+
+    // Price history → sorted arrays + advancing pointers.
+    const hist = {}, ptr = {};
+    Object.entries(historyMap || {}).forEach(([s, rows]) => {
+      hist[s.toUpperCase()] = (rows || [])
+        .map(r => ({ t: new Date(r.date).getTime(), c: parseFloat(r.close) }))
+        .filter(x => isFinite(x.t) && isFinite(x.c))
+        .sort((a, b) => a.t - b.t);
+    });
+    const priceAt = (sym, t) => {
+      const arr = hist[sym]; if (!arr || !arr.length) return null;
+      let i = ptr[sym] || 0;
+      while (i + 1 < arr.length && arr[i + 1].t <= t) i++;
+      ptr[sym] = i;
+      return arr[i].t > t ? null : arr[i].c;
+    };
+
+    // Holdings replay (per portfolio|symbol) advanced lazily to each grid date.
+    const books = {}; let evi = 0;
+    const applyUpTo = tLimit => {
+      while (evi < relevant.length) {
+        const r = relevant[evi];
+        if (new Date(r.Date).getTime() > tLimit) break;
+        evi++;
+        const sym = r.Symbol.toString().trim().toUpperCase();
+        const key = `${(r.Portfolio || '').trim()}|${sym}`;
+        if (!books[key]) books[key] = { lots: [] };
+        const b = books[key];
+        const q = Math.abs(n(r.Qty));
+        if (r.subCategory === 'SPLIT') {
+          const held = b.lots.reduce((s, l) => s + l.qty, 0);
+          if (held > 0.001 && q > 0) { const ratio = (held + q) / held; b.lots.forEach(l => { l.qty *= ratio; l.cps /= ratio; }); }
+          continue;
+        }
+        const act = _action(r); if (!act || !q) continue;
+        const price = Math.abs(n(r.ExecutionRate));
+        const cps = price > 0 ? price : Math.abs(n(r.TotalFX)) / q;
+        if (act === 'BUY') b.lots.push({ qty: q, cps });
+        else { let rem = q; while (rem > 0.0001 && b.lots.length) { const lot = b.lots[0]; const take = Math.min(lot.qty, rem); lot.qty -= take; rem -= take; if (lot.qty < 0.0001) b.lots.shift(); } }
+      }
+    };
+
+    // Monthly grid from first trade to today.
+    const firstT = new Date(relevant[0].Date).getTime();
+    const grid = []; const now = Date.now();
+    let d = new Date(firstT); d = new Date(d.getFullYear(), d.getMonth(), 1);
+    while (d.getTime() <= now) { grid.push(d.getTime()); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+    grid.push(now);
+
+    const points = [];
+    let cashIls = 0, realized = 0, cbi = 0, ri = 0;
+    grid.forEach(gt => {
+      while (cbi < cashBal.length && cashBal[cbi].t <= gt) cashIls = cashBal[cbi++].ils;
+      const cash = fxRate ? cashIls / fxRate : cashIls;
+      while (ri < closedAsc.length && closedAsc[ri].t <= gt) realized += closedAsc[ri++].pnl;
+      applyUpTo(gt);
+
+      const bySym = {};
+      Object.entries(books).forEach(([key, b]) => {
+        const sym = key.split('|')[1];
+        const q = b.lots.reduce((s, l) => s + l.qty, 0);
+        const cost = b.lots.reduce((s, l) => s + l.qty * l.cps, 0);
+        if (!bySym[sym]) bySym[sym] = { q: 0, cost: 0 };
+        bySym[sym].q += q; bySym[sym].cost += cost;
+      });
+      let mv = 0, costBasis = 0;
+      Object.entries(bySym).forEach(([sym, o]) => {
+        costBasis += o.cost;
+        if (o.q <= 0.001) return;
+        const px = priceAt(sym, gt);
+        mv += px != null ? o.q * factorAfter(sym, gt) * px : o.cost;
+      });
+      points.push({ t: gt, cash, realized, unrealized: mv - costBasis });
+    });
+    return points;
+  }
+
+  return { computePositions, computeClosedTrades, computeEquityCurve };
 })();

@@ -770,7 +770,28 @@ Pages.portfolio = (() => {
     _escHandler = e => { if (e.key === 'Escape') _closeModal(); };
     document.addEventListener('keydown', _escHandler);
 
-    // Load history (transactions already in memory)
+    // Self-heal data deps so the modal works even when opened from another
+    // page (e.g. the closed-trades / performance page) before the portfolio
+    // page has loaded its transactions or live prices.
+    try {
+      if (!_enrichedTxns || !_enrichedTxns.length) {
+        const txns = await DataService.getTransactions();
+        _enrichedTxns = Classifier.enrichAll(txns);
+      }
+      if (!_rtMap || !Object.keys(_rtMap).length) {
+        const rt = await DataService.getRealTimeData().catch(() => null);
+        _rtMap = _buildRtMap(rt);
+      }
+      if (!_fxRate) { _fxRate = await DataService.getFxRate().catch(() => null); }
+      // Recompute open positions so the summary strip shows for open holdings
+      // even when the modal is opened from another page (e.g. performance).
+      if (!_positions || !_positions.length) {
+        _positions = _enrich(PortfolioEngine.computePositions(_enrichedTxns));
+      }
+    } catch (_) { /* fall through — modal will show what it can */ }
+    if (!_modalEl) return;   // closed while loading
+
+    // Load price history
     let history = [];
     try { history = await DataService.getStockHistory(symbol); } catch (_) { history = []; }
     if (!_modalEl) return;   // closed while loading
