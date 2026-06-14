@@ -298,9 +298,9 @@ const PortfolioEngine = (() => {
     });
     const factorAfter = (sym, t) => { let f = 1; (splitEv[sym] || []).forEach(e => { if (e.t > t) f *= e.ratio; }); return f; };
 
-    // Realized (cumulative) from closed trades.
+    // Realized (cumulative) from closed trades — keep symbol for per-symbol breakdown.
     const closedAsc = computeClosedTrades(txns)
-      .map(c => ({ t: new Date(c.sellDate).getTime(), pnl: c.pnl }))
+      .map(c => ({ t: new Date(c.sellDate).getTime(), pnl: c.pnl, symbol: c.symbol }))
       .sort((a, b) => a.t - b.t);
 
     // Cash = the broker's actual running CashBalanceILS (→USD), not a
@@ -365,29 +365,43 @@ const PortfolioEngine = (() => {
     if (!grid.length || grid[grid.length - 1] !== now) grid.push(now);
 
     const points = [];
+    const realBySym = {};
     let cashIls = 0, realized = 0, cbi = 0, ri = 0;
     grid.forEach(gt => {
       while (cbi < cashBal.length && cashBal[cbi].t <= gt) cashIls = cashBal[cbi++].ils;
       const cash = fxRate ? cashIls / fxRate : cashIls;
-      while (ri < closedAsc.length && closedAsc[ri].t <= gt) realized += closedAsc[ri++].pnl;
+      while (ri < closedAsc.length && closedAsc[ri].t <= gt) {
+        realized += closedAsc[ri].pnl;
+        realBySym[closedAsc[ri].symbol] = (realBySym[closedAsc[ri].symbol] || 0) + closedAsc[ri].pnl;
+        ri++;
+      }
       applyUpTo(gt);
 
-      const bySym = {};
+      const bySymHold = {};
       Object.entries(books).forEach(([key, b]) => {
         const sym = key.split('|')[1];
         const q = b.lots.reduce((s, l) => s + l.qty, 0);
         const cost = b.lots.reduce((s, l) => s + l.qty * l.cps, 0);
-        if (!bySym[sym]) bySym[sym] = { q: 0, cost: 0 };
-        bySym[sym].q += q; bySym[sym].cost += cost;
+        if (!bySymHold[sym]) bySymHold[sym] = { q: 0, cost: 0 };
+        bySymHold[sym].q += q; bySymHold[sym].cost += cost;
       });
       let mv = 0, costBasis = 0;
-      Object.entries(bySym).forEach(([sym, o]) => {
+      // Per-symbol total P&L (unrealized + realized) — for the returns breakdown.
+      const bySym = {};
+      const allSyms = new Set([...Object.keys(bySymHold), ...Object.keys(realBySym)]);
+      allSyms.forEach(sym => {
+        const o = bySymHold[sym] || { q: 0, cost: 0 };
         costBasis += o.cost;
-        if (o.q <= 0.001) return;
-        const px = priceAt(sym, gt);
-        mv += px != null ? o.q * factorAfter(sym, gt) * px : o.cost;
+        let unrSym = 0;
+        if (o.q > 0.001) {
+          const px = priceAt(sym, gt);
+          const valSym = px != null ? o.q * factorAfter(sym, gt) * px : o.cost;
+          mv += valSym;
+          unrSym = valSym - o.cost;
+        }
+        bySym[sym] = unrSym + (realBySym[sym] || 0);
       });
-      points.push({ t: gt, cash, realized, unrealized: mv - costBasis, marketValue: mv });
+      points.push({ t: gt, cash, realized, unrealized: mv - costBasis, marketValue: mv, bySym });
     });
     return points;
   }

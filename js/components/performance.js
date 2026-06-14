@@ -5,12 +5,17 @@ Pages.performance = (() => {
   let _trades = [];
   let _tax = null;
   let _enriched = null;       // classified transactions (for the returns chart)
-  let _daily = null;          // daily equity series (lazy-loaded for returns tab)
+  let _daily = null;          // daily equity series for the active portfolio
+  let _dailyByPort = {};       // cache: portfolio → daily series
+  let _histMap = null;         // cache: symbol → price history (shared)
+  let _lastBuckets = [];       // last rendered returns buckets (for tooltip lookup)
   let _fxRate = null;
-  let _filter = 'all';
+  let _filter = 'all';        // closed-trades portfolio filter
   let _tab = 'trades';        // 'trades' | 'returns' | 'tax'
   let _range = 'year';        // returns view range: day | quarter | year | all
   let _bucket = 'day';        // returns bar size: day | week | month | quarter | year
+  let _metric = 'pct';        // returns metric: pct | amount
+  let _retPort = 'all';       // returns portfolio filter
   let _container = null;
   let _currHandler = null;
 
@@ -45,7 +50,7 @@ Pages.performance = (() => {
       _enriched = Classifier.enrichAll(txns);
       _trades = PortfolioEngine.computeClosedTrades(_enriched);
       _tax = Analytics.taxSummary(_enriched, _fxRate);
-      _daily = null;
+      _daily = null; _dailyByPort = {}; _histMap = null;
       App.setDataStatus('live');
       _paint(_container);
     } catch (err) {
@@ -165,15 +170,19 @@ Pages.performance = (() => {
   }
 
   /* ── TAB: returns (תשואות) ── */
+  function _retPorts() { return [...new Set(_enriched.filter(r => r.category === 'STOCKS').map(r => (r.Portfolio || '').trim()).filter(Boolean))].sort(); }
+
   async function _ensureDaily() {
-    if (_daily) return;
-    const syms = [...new Set(_enriched
-      .filter(r => r.category === 'STOCKS')
-      .map(r => (r.Symbol || '').toString().trim().toUpperCase())
-      .filter(s => /^[A-Z]{1,5}$/.test(s)))];
-    const hist = {};
-    await Promise.all(syms.map(async s => { try { hist[s] = await DataService.getStockHistory(s); } catch (_) { hist[s] = []; } }));
-    _daily = PortfolioEngine.computeEquityCurve(_enriched, hist, _fxRate, 'day');
+    if (_dailyByPort[_retPort]) { _daily = _dailyByPort[_retPort]; return; }
+    // Price history is per-symbol (portfolio-independent) → fetch once, cache.
+    if (!_histMap) {
+      const syms = [...new Set(_enriched.filter(r => r.category === 'STOCKS')
+        .map(r => (r.Symbol || '').toString().trim().toUpperCase()).filter(s => /^[A-Z]{1,5}$/.test(s)))];
+      _histMap = {};
+      await Promise.all(syms.map(async s => { try { _histMap[s] = await DataService.getStockHistory(s); } catch (_) { _histMap[s] = []; } }));
+    }
+    const src = _retPort === 'all' ? _enriched : _enriched.filter(r => (r.Portfolio || '').trim() === _retPort);
+    _daily = _dailyByPort[_retPort] = PortfolioEngine.computeEquityCurve(src, _histMap, _fxRate, 'day');
   }
 
   function _bucketKey(t) {
@@ -191,73 +200,111 @@ Pages.performance = (() => {
     const cutoff = _range === 'all' ? -Infinity : Date.now() - RANGE_DAYS[_range] * 86400000;
     const map = new Map();
     for (let i = 1; i < _daily.length; i++) {
-      const day = _daily[i];
+      const day = _daily[i], prev = _daily[i - 1];
       if (day.t < cutoff) continue;
-      const delta = tp(day) - tp(_daily[i - 1]);
-      // Daily view: skip non-trading days (weekends/holidays → no price move).
-      if (_bucket === 'day' && Math.abs(delta) < 0.01) continue;
-      const baseMV = _daily[i - 1].marketValue || day.marketValue || 0;
+      const delta = tp(day) - tp(prev);
+      if (_bucket === 'day' && Math.abs(delta) < 0.01) continue;   // skip non-trading days
+      const baseMV = prev.marketValue || day.marketValue || 0;
       const { key, label } = _bucketKey(day.t);
-      if (!map.has(key)) map.set(key, { key, label, t: day.t, pnl: 0, base: baseMV > 0 ? baseMV : 0 });
-      map.get(key).pnl += delta;
+      if (!map.has(key)) map.set(key, { key, label, t: day.t, pnl: 0, base: baseMV > 0 ? baseMV : 0, contrib: {} });
+      const b = map.get(key);
+      b.pnl += delta;
+      // Per-symbol contribution to this bucket's P&L.
+      const cur = day.bySym || {}, pv = prev.bySym || {};
+      new Set([...Object.keys(cur), ...Object.keys(pv)]).forEach(s => {
+        const d = (cur[s] || 0) - (pv[s] || 0);
+        if (Math.abs(d) > 0.005) b.contrib[s] = (b.contrib[s] || 0) + d;
+      });
     }
-    return [...map.values()]
-      .sort((a, b) => a.t - b.t)
-      .map(b => ({ ...b, ret: b.base > 0 ? (b.pnl / b.base) * 100 : 0 }));
+    return [...map.values()].sort((a, b) => a.t - b.t).map(b => ({
+      ...b,
+      ret: b.base > 0 ? (b.pnl / b.base) * 100 : 0,
+      top: Object.entries(b.contrib).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3),
+    }));
   }
+
+  const _val = b => _metric === 'pct' ? b.ret : (toDisplay(b.pnl) ?? 0);
+  const _fmtVal = v => _metric === 'pct'
+    ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`
+    : `${v >= 0 ? '+' : '−'}${currSym()}${fmtMoney(Math.abs(v))}`;
 
   function _returnsSVG() {
     const buckets = _computeBuckets();
+    _lastBuckets = buckets;
     if (!buckets.length) return '<p class="pf-no-data">אין נתונים לטווח שנבחר</p>';
 
-    const W = 920, H = 320, padL = 46, padR = 12, padT = 14, padB = 34;
-    const maxAbs = Math.max(0.5, ...buckets.map(b => Math.abs(b.ret)));
+    const W = 920, H = 320, padL = 56, padR = 12, padT = 14, padB = 34;
+    const maxAbs = Math.max(1e-6, ...buckets.map(b => Math.abs(_val(b))));
     const chartH = H - padT - padB, chartW = W - padL - padR;
     const bw = Math.max(2, Math.min(26, chartW / buckets.length - 3));
     const step = chartW / buckets.length;
     const y0 = padT + chartH / 2;
     const yS = v => y0 - (v / maxAbs) * (chartH / 2);
+    const fmtAxis = v => _metric === 'pct'
+      ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%`
+      : `${v >= 0 ? '+' : '−'}${currSym()}${Math.abs(v) >= 1000 ? (Math.abs(v) / 1000).toFixed(0) + 'K' : Math.abs(v).toFixed(0)}`;
 
     let grid = '', yLbls = '';
     [-1, -0.5, 0, 0.5, 1].forEach(f => {
       const v = maxAbs * f, y = yS(v);
       grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${f === 0 ? 1 : 0.5}"/>`;
-      yLbls += `<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%</text>`;
+      yLbls += `<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${fmtAxis(v)}</text>`;
     });
 
     let bars = '', xLbls = '';
     const labelEvery = Math.ceil(buckets.length / 14);
     buckets.forEach((b, i) => {
-      const cx = padL + i * step + step / 2;
-      const x = cx - bw / 2;
-      const y = b.ret >= 0 ? yS(b.ret) : y0;
-      const h = Math.max(1, Math.abs(yS(b.ret) - y0));
-      const col = b.ret >= 0 ? '#16A34A' : '#DC2626';
-      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}" rx="1.5"><title>${b.label}: ${b.ret >= 0 ? '+' : '−'}${Math.abs(b.ret).toFixed(2)}%</title></rect>`;
+      const v = _val(b);
+      const cx = padL + i * step + step / 2, x = cx - bw / 2;
+      const y = v >= 0 ? yS(v) : y0;
+      const h = Math.max(1, Math.abs(yS(v) - y0));
+      const col = v >= 0 ? '#16A34A' : '#DC2626';
+      bars += `<rect class="ret-bar" data-i="${i}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}" rx="1.5"/>`;
       if (i % labelEvery === 0) xLbls += `<text x="${cx.toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="8.5" fill="var(--text-muted)" font-family="Inter,sans-serif">${b.label}</text>`;
     });
 
     return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:320px">${grid}${yLbls}${bars}${xLbls}</svg>`;
   }
 
+  function _tipHTML(b) {
+    const sym = currSym();
+    const rows = (b.top || []).map(([s, v]) => `
+      <div class="ret-tip-row">
+        <span class="ret-tip-sym">${s}</span>
+        <span class="${v >= 0 ? 'pos' : 'neg'}">${v >= 0 ? '+' : '−'}${sym}${fmtMoney(toDisplay(v))}</span>
+      </div>`).join('');
+    return `
+      <div class="ret-tip-head">${b.label}</div>
+      <div class="ret-tip-total ${b.pnl >= 0 ? 'pos' : 'neg'}">${_metric === 'pct' ? `${_fmtVal(b.ret)} · ` : ''}${b.pnl >= 0 ? '+' : '−'}${sym}${fmtMoney(toDisplay(b.pnl))}</div>
+      ${rows ? `<div class="ret-tip-sub">תרומה מובילה:</div>${rows}` : '<div class="ret-tip-sub">אין פירוט</div>'}`;
+  }
+
   function _renderReturns() {
     const opt = (val, cur, label) => `<option value="${val}"${val === cur ? ' selected' : ''}>${label}</option>`;
+    const ports = _retPorts();
+    const portSel = ports.length > 1 ? `
+        <label class="ret-ctl">תיק:
+          <select id="ret-port">${opt('all', _retPort, 'כל התיקים')}${ports.map(p => opt(p, _retPort, p)).join('')}</select>
+        </label>` : '';
     const controls = `
-      <div class="pf-filter-bar" style="justify-content:flex-start;gap:18px">
+      <div class="pf-filter-bar" style="justify-content:flex-start;gap:18px;flex-wrap:wrap">
+        ${portSel}
+        <label class="ret-ctl">מדד:
+          <select id="ret-metric">${opt('pct', _metric, 'תשואה %')}${opt('amount', _metric, `סכום (${currSym()})`)}</select>
+        </label>
         <label class="ret-ctl">טווח תצוגה:
-          <select id="ret-range">
-            ${opt('day', _range, 'יום')}${opt('quarter', _range, 'רבעון')}${opt('year', _range, 'שנה')}${opt('all', _range, 'מההתחלה')}
-          </select>
+          <select id="ret-range">${opt('day', _range, 'יום')}${opt('quarter', _range, 'רבעון')}${opt('year', _range, 'שנה')}${opt('all', _range, 'מההתחלה')}</select>
         </label>
         <label class="ret-ctl">כל עמודה:
-          <select id="ret-bucket">
-            ${opt('day', _bucket, 'יומי')}${opt('week', _bucket, 'שבועי')}${opt('month', _bucket, 'חודשי')}${opt('quarter', _bucket, 'רבעוני')}${opt('year', _bucket, 'שנתי')}
-          </select>
+          <select id="ret-bucket">${opt('day', _bucket, 'יומי')}${opt('week', _bucket, 'שבועי')}${opt('month', _bucket, 'חודשי')}${opt('quarter', _bucket, 'רבעוני')}${opt('year', _bucket, 'שנתי')}</select>
         </label>
       </div>`;
     const body = !_daily
       ? `<div class="pf-loading" style="min-height:280px"><p style="color:var(--text-muted);font-size:13px">מחשב תשואות...</p></div>`
-      : `<div class="pf-chart-card"><div class="pf-chart-title">תשואת התיק המנייתי (לפי שינוי ברווח הכולל)</div>${_returnsSVG()}</div>`;
+      : `<div class="pf-chart-card">
+           <div class="pf-chart-title">תשואת התיק המנייתי${_retPort !== 'all' ? ' — ' + _retPort : ''} (${_metric === 'pct' ? '%' : 'סכום'})</div>
+           <div class="ret-chart-wrap">${_returnsSVG()}<div class="ret-tip" id="ret-tip"></div></div>
+         </div>`;
     return controls + body;
   }
 
@@ -273,12 +320,32 @@ Pages.performance = (() => {
     container.querySelectorAll('.pf-sym-click').forEach(el =>
       el.addEventListener('click', () => Pages.portfolio.openStock(el.dataset.sym)));
 
-    const rangeSel = container.querySelector('#ret-range');
-    const bucketSel = container.querySelector('#ret-bucket');
-    if (rangeSel)  rangeSel.addEventListener('change', () => { _range = rangeSel.value; _paint(_container); });
-    if (bucketSel) bucketSel.addEventListener('change', () => { _bucket = bucketSel.value; _paint(_container); });
+    const bind = (id, fn) => { const el = container.querySelector(id); if (el) el.addEventListener('change', () => { fn(el.value); _paint(_container); }); };
+    bind('#ret-range',  v => _range = v);
+    bind('#ret-bucket', v => _bucket = v);
+    bind('#ret-metric', v => _metric = v);
+    bind('#ret-port',   v => { _retPort = v; _daily = null; });   // triggers lazy recompute below
 
-    // Lazy-load the daily series the first time the returns tab is shown.
+    // Tooltip: show holdings breakdown + top-3 for the hovered bar.
+    const wrap = container.querySelector('.ret-chart-wrap');
+    const tip = container.querySelector('#ret-tip');
+    if (wrap && tip) {
+      wrap.addEventListener('mousemove', e => {
+        const bar = e.target.closest('.ret-bar');
+        if (!bar) { tip.style.display = 'none'; return; }
+        const b = _lastBuckets[+bar.dataset.i];
+        if (!b) { tip.style.display = 'none'; return; }
+        tip.innerHTML = _tipHTML(b);
+        tip.style.display = 'block';
+        const r = wrap.getBoundingClientRect();
+        let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+        if (x + 200 > r.width) x = e.clientX - r.left - 200 - 14;   // flip near right edge
+        tip.style.left = x + 'px'; tip.style.top = y + 'px';
+      });
+      wrap.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    }
+
+    // Lazy-load / recompute the daily series for the active portfolio.
     if (_tab === 'returns' && !_daily) {
       _ensureDaily().then(() => { if (_tab === 'returns' && _container) _paint(_container); });
     }
