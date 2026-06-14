@@ -4,13 +4,19 @@ Pages.performance = (() => {
 
   let _trades = [];
   let _tax = null;
+  let _enriched = null;       // classified transactions (for the returns chart)
+  let _daily = null;          // daily equity series (lazy-loaded for returns tab)
   let _fxRate = null;
   let _filter = 'all';
-  let _tab = 'trades';        // 'trades' | 'tax'
+  let _tab = 'trades';        // 'trades' | 'returns' | 'tax'
+  let _range = 'year';        // returns view range: day | quarter | year | all
+  let _bucket = 'day';        // returns bar size: day | week | month | quarter | year
   let _container = null;
   let _currHandler = null;
 
   const CGT_RATE = 0.25;      // שיעור מס רווחי הון בישראל (להערכה בלבד)
+  const RANGE_DAYS = { day: 1, quarter: 92, year: 365, all: Infinity };
+  const HE_MON = ['ינו','פבר','מרץ','אפר','מאי','יונ','יול','אוג','ספט','אוק','נוב','דצמ'];
 
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
   const fmtMoney = (v, d = 2) => (v === null || !isFinite(v)) ? '—' : Math.abs(v).toLocaleString('he-IL', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -36,9 +42,10 @@ Pages.performance = (() => {
         DataService.getFxRate().catch(() => null),
       ]);
       _fxRate = fx; if (_fxRate) App.setFxRate(_fxRate);
-      const enriched = Classifier.enrichAll(txns);
-      _trades = PortfolioEngine.computeClosedTrades(enriched);
-      _tax = Analytics.taxSummary(enriched, _fxRate);
+      _enriched = Classifier.enrichAll(txns);
+      _trades = PortfolioEngine.computeClosedTrades(_enriched);
+      _tax = Analytics.taxSummary(_enriched, _fxRate);
+      _daily = null;
       App.setDataStatus('live');
       _paint(_container);
     } catch (err) {
@@ -52,6 +59,7 @@ Pages.performance = (() => {
   function _tabBar() {
     return `<div class="pf-filter-bar" style="margin-bottom:14px">
       <button class="pf-port-btn${_tab === 'trades' ? ' active' : ''}" data-tab="trades">עסקאות סגורות</button>
+      <button class="pf-port-btn${_tab === 'returns' ? ' active' : ''}" data-tab="returns">תשואות</button>
       <button class="pf-port-btn${_tab === 'tax' ? ' active' : ''}" data-tab="tax">מיסים</button>
     </div>`;
   }
@@ -156,9 +164,107 @@ Pages.performance = (() => {
         ⚠️ אומדן בלבד לפי 25% על רווח הון ממומש; אינו מתחשב בקיזוז הפסדים, פטורים או ניכוי במקור שכבר שולם. אינו ייעוץ מס.</p>`;
   }
 
+  /* ── TAB: returns (תשואות) ── */
+  async function _ensureDaily() {
+    if (_daily) return;
+    const syms = [...new Set(_enriched
+      .filter(r => r.category === 'STOCKS')
+      .map(r => (r.Symbol || '').toString().trim().toUpperCase())
+      .filter(s => /^[A-Z]{1,5}$/.test(s)))];
+    const hist = {};
+    await Promise.all(syms.map(async s => { try { hist[s] = await DataService.getStockHistory(s); } catch (_) { hist[s] = []; } }));
+    _daily = PortfolioEngine.computeEquityCurve(_enriched, hist, _fxRate, 'day');
+  }
+
+  function _bucketKey(t) {
+    const d = new Date(t), y = d.getFullYear(), m = d.getMonth();
+    if (_bucket === 'year')    return { key: `${y}`, label: `${y}` };
+    if (_bucket === 'quarter') { const q = Math.floor(m / 3) + 1; return { key: `${y}-Q${q}`, label: `Q${q}/${String(y).slice(2)}` }; }
+    if (_bucket === 'month')   return { key: `${y}-${m}`, label: `${HE_MON[m]} ${String(y).slice(2)}` };
+    if (_bucket === 'week')    { const oj = new Date(y, 0, 1); const wk = Math.ceil(((d - oj) / 86400000 + oj.getDay() + 1) / 7); return { key: `${y}-W${wk}`, label: `ש${wk}/${String(y).slice(2)}` }; }
+    return { key: `${y}-${m}-${d.getDate()}`, label: `${d.getDate()}/${m + 1}` };
+  }
+
+  function _computeBuckets() {
+    if (!_daily || _daily.length < 2) return [];
+    const tp = p => p.unrealized + p.realized;
+    const cutoff = _range === 'all' ? -Infinity : Date.now() - RANGE_DAYS[_range] * 86400000;
+    const map = new Map();
+    for (let i = 1; i < _daily.length; i++) {
+      const day = _daily[i];
+      if (day.t < cutoff) continue;
+      const delta = tp(day) - tp(_daily[i - 1]);
+      // Daily view: skip non-trading days (weekends/holidays → no price move).
+      if (_bucket === 'day' && Math.abs(delta) < 0.01) continue;
+      const baseMV = _daily[i - 1].marketValue || day.marketValue || 0;
+      const { key, label } = _bucketKey(day.t);
+      if (!map.has(key)) map.set(key, { key, label, t: day.t, pnl: 0, base: baseMV > 0 ? baseMV : 0 });
+      map.get(key).pnl += delta;
+    }
+    return [...map.values()]
+      .sort((a, b) => a.t - b.t)
+      .map(b => ({ ...b, ret: b.base > 0 ? (b.pnl / b.base) * 100 : 0 }));
+  }
+
+  function _returnsSVG() {
+    const buckets = _computeBuckets();
+    if (!buckets.length) return '<p class="pf-no-data">אין נתונים לטווח שנבחר</p>';
+
+    const W = 920, H = 320, padL = 46, padR = 12, padT = 14, padB = 34;
+    const maxAbs = Math.max(0.5, ...buckets.map(b => Math.abs(b.ret)));
+    const chartH = H - padT - padB, chartW = W - padL - padR;
+    const bw = Math.max(2, Math.min(26, chartW / buckets.length - 3));
+    const step = chartW / buckets.length;
+    const y0 = padT + chartH / 2;
+    const yS = v => y0 - (v / maxAbs) * (chartH / 2);
+
+    let grid = '', yLbls = '';
+    [-1, -0.5, 0, 0.5, 1].forEach(f => {
+      const v = maxAbs * f, y = yS(v);
+      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="${f === 0 ? 1 : 0.5}"/>`;
+      yLbls += `<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%</text>`;
+    });
+
+    let bars = '', xLbls = '';
+    const labelEvery = Math.ceil(buckets.length / 14);
+    buckets.forEach((b, i) => {
+      const cx = padL + i * step + step / 2;
+      const x = cx - bw / 2;
+      const y = b.ret >= 0 ? yS(b.ret) : y0;
+      const h = Math.max(1, Math.abs(yS(b.ret) - y0));
+      const col = b.ret >= 0 ? '#16A34A' : '#DC2626';
+      bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}" rx="1.5"><title>${b.label}: ${b.ret >= 0 ? '+' : '−'}${Math.abs(b.ret).toFixed(2)}%</title></rect>`;
+      if (i % labelEvery === 0) xLbls += `<text x="${cx.toFixed(1)}" y="${H - 12}" text-anchor="middle" font-size="8.5" fill="var(--text-muted)" font-family="Inter,sans-serif">${b.label}</text>`;
+    });
+
+    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:320px">${grid}${yLbls}${bars}${xLbls}</svg>`;
+  }
+
+  function _renderReturns() {
+    const opt = (val, cur, label) => `<option value="${val}"${val === cur ? ' selected' : ''}>${label}</option>`;
+    const controls = `
+      <div class="pf-filter-bar" style="justify-content:flex-start;gap:18px">
+        <label class="ret-ctl">טווח תצוגה:
+          <select id="ret-range">
+            ${opt('day', _range, 'יום')}${opt('quarter', _range, 'רבעון')}${opt('year', _range, 'שנה')}${opt('all', _range, 'מההתחלה')}
+          </select>
+        </label>
+        <label class="ret-ctl">כל עמודה:
+          <select id="ret-bucket">
+            ${opt('day', _bucket, 'יומי')}${opt('week', _bucket, 'שבועי')}${opt('month', _bucket, 'חודשי')}${opt('quarter', _bucket, 'רבעוני')}${opt('year', _bucket, 'שנתי')}
+          </select>
+        </label>
+      </div>`;
+    const body = !_daily
+      ? `<div class="pf-loading" style="min-height:280px"><p style="color:var(--text-muted);font-size:13px">מחשב תשואות...</p></div>`
+      : `<div class="pf-chart-card"><div class="pf-chart-title">תשואת התיק המנייתי (לפי שינוי ברווח הכולל)</div>${_returnsSVG()}</div>`;
+    return controls + body;
+  }
+
   function _paint(container) {
     _container = container;
-    container.innerHTML = _tabBar() + (_tab === 'trades' ? _renderTrades() : _renderTax());
+    const content = _tab === 'trades' ? _renderTrades() : _tab === 'tax' ? _renderTax() : _renderReturns();
+    container.innerHTML = _tabBar() + content;
 
     container.querySelectorAll('[data-tab]').forEach(btn =>
       btn.addEventListener('click', () => { if (btn.dataset.tab !== _tab) { _tab = btn.dataset.tab; _paint(_container); } }));
@@ -166,6 +272,16 @@ Pages.performance = (() => {
       btn.addEventListener('click', () => { if (btn.dataset.port !== _filter) { _filter = btn.dataset.port; _paint(_container); } }));
     container.querySelectorAll('.pf-sym-click').forEach(el =>
       el.addEventListener('click', () => Pages.portfolio.openStock(el.dataset.sym)));
+
+    const rangeSel = container.querySelector('#ret-range');
+    const bucketSel = container.querySelector('#ret-bucket');
+    if (rangeSel)  rangeSel.addEventListener('change', () => { _range = rangeSel.value; _paint(_container); });
+    if (bucketSel) bucketSel.addEventListener('change', () => { _bucket = bucketSel.value; _paint(_container); });
+
+    // Lazy-load the daily series the first time the returns tab is shown.
+    if (_tab === 'returns' && !_daily) {
+      _ensureDaily().then(() => { if (_tab === 'returns' && _container) _paint(_container); });
+    }
   }
 
   return { render };

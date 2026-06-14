@@ -270,7 +270,7 @@ const PortfolioEngine = (() => {
     return 0;
   }
 
-  function computeEquityCurve(txns, historyMap, fxRate) {
+  function computeEquityCurve(txns, historyMap, fxRate, step = 'month') {
     if (!txns || !txns.length) return [];
     const relevant = _sorted(txns.filter(_isRelevant)).filter(r => {
       const s = (r.Symbol || '').toString().trim().toUpperCase();
@@ -351,12 +351,18 @@ const PortfolioEngine = (() => {
       }
     };
 
-    // Monthly grid from first trade to today.
+    // Grid from first trade to today — monthly (default) or daily (step='day').
     const firstT = new Date(relevant[0].Date).getTime();
     const grid = []; const now = Date.now();
-    let d = new Date(firstT); d = new Date(d.getFullYear(), d.getMonth(), 1);
-    while (d.getTime() <= now) { grid.push(d.getTime()); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
-    grid.push(now);
+    let d = new Date(firstT);
+    if (step === 'day') {
+      d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      while (d.getTime() <= now) { grid.push(d.getTime()); d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1); }
+    } else {
+      d = new Date(d.getFullYear(), d.getMonth(), 1);
+      while (d.getTime() <= now) { grid.push(d.getTime()); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); }
+    }
+    if (!grid.length || grid[grid.length - 1] !== now) grid.push(now);
 
     const points = [];
     let cashIls = 0, realized = 0, cbi = 0, ri = 0;
@@ -381,7 +387,7 @@ const PortfolioEngine = (() => {
         const px = priceAt(sym, gt);
         mv += px != null ? o.q * factorAfter(sym, gt) * px : o.cost;
       });
-      points.push({ t: gt, cash, realized, unrealized: mv - costBasis });
+      points.push({ t: gt, cash, realized, unrealized: mv - costBasis, marketValue: mv });
     });
     return points;
   }
