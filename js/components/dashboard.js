@@ -5,6 +5,9 @@ Pages.dashboard = (() => {
   let _container = null;
   let _fxRate = null;
   let _currHandler = null;
+  let _eqRange = 'all';       // equity chart range: quarter | year | all
+  let _eqStep = 'month';      // equity chart point spacing: day | week | month
+  const EQ_RANGE_DAYS = { quarter: 92, year: 365, all: Infinity };
 
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
   const fmtMoney = (v, d = 2) => (v === null || !isFinite(v)) ? '—' : Math.abs(v).toLocaleString('he-IL', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -81,7 +84,7 @@ Pages.dashboard = (() => {
       await Promise.all(symbols.map(async s => {
         try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
       }));
-      const curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate);
+      const curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
       const cashILS = Analytics.latestCashILS(txns);
       const cashUSD = cashILS == null ? null : (_fxRate ? cashILS / _fxRate : cashILS);
 
@@ -147,9 +150,20 @@ Pages.dashboard = (() => {
         ${_link('journal', 'יומן תנועות', 'כל התנועות הגולמיות')}
       </div>`;
 
+    const opt = (v, cur, l) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`;
     const chart = `
       <div class="pf-chart-card" style="margin-top:14px">
-        <div class="pf-chart-title">התפתחות לאורך זמן — מזומן, רווח ממומש ופוטנציאלי</div>
+        <div class="pf-chart-head">
+          <div class="pf-chart-title">התפתחות לאורך זמן — מזומן, רווח ממומש ופוטנציאלי</div>
+          <div class="pf-chart-ctls">
+            <label class="ret-ctl">טווח:
+              <select id="eq-range">${opt('quarter', _eqRange, 'רבעון')}${opt('year', _eqRange, 'שנה')}${opt('all', _eqRange, 'מההתחלה')}</select>
+            </label>
+            <label class="ret-ctl">רזולוציה:
+              <select id="eq-step">${opt('day', _eqStep, 'יומי')}${opt('week', _eqStep, 'שבועי')}${opt('month', _eqStep, 'חודשי')}</select>
+            </label>
+          </div>
+        </div>
         ${_renderEquityChart()}
         <div class="pf-bar-legend" style="margin-top:6px">
           <span><span class="pf-leg-dot" style="background:#2563EB"></span>מזומן</span>
@@ -161,52 +175,86 @@ Pages.dashboard = (() => {
     _container.innerHTML = hero + row1 + chart + row2 + links;
     _container.querySelectorAll('.db-link').forEach(el =>
       el.addEventListener('click', () => App.navigateTo(el.dataset.page)));
+    const rSel = _container.querySelector('#eq-range');
+    const sSel = _container.querySelector('#eq-step');
+    if (rSel) rSel.addEventListener('change', () => { _eqRange = rSel.value; _paint(); });
+    if (sSel) sSel.addEventListener('change', () => { _eqStep = sSel.value; _paint(); });
   }
 
-  /* Multi-line time chart: cash / realized / unrealized. */
+  /* Downsample the daily curve to the selected spacing within the range. */
+  function _eqPoints() {
+    const all = (_state.curve || []).filter(p => isFinite(p.t));
+    if (all.length < 2) return [];
+    const cutoff = _eqRange === 'all' ? -Infinity : Date.now() - EQ_RANGE_DAYS[_eqRange] * 86400000;
+    const inRange = all.filter(p => p.t >= cutoff);
+    const src = inRange.length >= 2 ? inRange : all.slice(-2);
+    if (_eqStep === 'day') return src;
+    // keep the last point of each week/month bucket (plus the very last point)
+    const seen = new Map();
+    src.forEach(p => {
+      const d = new Date(p.t);
+      const key = _eqStep === 'week'
+        ? `${d.getFullYear()}-${Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 604800000)}`
+        : `${d.getFullYear()}-${d.getMonth()}`;
+      seen.set(key, p);                 // later overwrites earlier → last in bucket
+    });
+    const out = [...seen.values()];
+    if (out[out.length - 1] !== src[src.length - 1]) out.push(src[src.length - 1]);
+    return out;
+  }
+
+  /* Multi-line time chart: cash / realized / unrealized (with area fills). */
   function _renderEquityChart() {
-    const pts = (_state.curve || []).filter(p => isFinite(p.t));
+    const pts = _eqPoints();
     if (pts.length < 2) return '<p class="pf-no-data">אין מספיק היסטוריה להצגת גרף</p>';
 
     const series = [
-      { key: 'cash',       color: '#2563EB' },
-      { key: 'realized',   color: '#059669' },
-      { key: 'unrealized', color: '#D97706' },
+      { key: 'unrealized', color: '#D97706', fill: 'rgba(217,119,6,0.10)' },
+      { key: 'realized',   color: '#059669', fill: 'rgba(5,150,105,0.10)' },
+      { key: 'cash',       color: '#2563EB', fill: 'rgba(37,99,235,0.08)' },
     ];
     const val = (p, k) => toDisplay(p[k]) ?? 0;
 
-    const W = 900, H = 280, padL = 60, padR = 14, padT = 12, padB = 26;
+    const W = 900, H = 280, padL = 62, padR = 16, padT = 14, padB = 26;
     const t0 = pts[0].t, t1 = pts[pts.length - 1].t || (t0 + 1);
     let lo = Infinity, hi = -Infinity;
     pts.forEach(p => series.forEach(s => { const v = val(p, s.key); if (v < lo) lo = v; if (v > hi) hi = v; }));
-    if (lo > 0) lo = 0;                  // include zero baseline
+    if (lo > 0) lo = 0;
     if (hi < 0) hi = 0;
-    const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    const pad = (hi - lo) * 0.08 || 1; lo -= pad; hi += pad;
 
     const xS = t => padL + ((t - t0) / (t1 - t0 || 1)) * (W - padL - padR);
     const yS = v => padT + (1 - (v - lo) / (hi - lo || 1)) * (H - padT - padB);
-
     const sym = currSym();
+
     let grid = '', yLbls = '';
     for (let i = 0; i <= 4; i++) {
       const v = lo + ((hi - lo) / 4) * i, y = yS(v);
       const lbl = Math.abs(v) >= 1000 ? `${sym}${(v / 1000).toFixed(0)}K` : `${sym}${v.toFixed(0)}`;
-      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.6"/>`;
+      grid  += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
       yLbls += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${lbl}</text>`;
     }
     const y0 = yS(0);
-    const zero = (0 >= lo && 0 <= hi) ? `<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W - padR}" y2="${y0.toFixed(1)}" stroke="var(--text-muted)" stroke-width="0.8" stroke-dasharray="3 3"/>` : '';
+    const zero = (0 >= lo && 0 <= hi) ? `<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W - padR}" y2="${y0.toFixed(1)}" stroke="var(--text-secondary)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>` : '';
 
+    const baseY = yS(Math.max(lo, Math.min(hi, 0)));
+    const areas = series.map(s => {
+      const top = pts.map((p, i) => `${i ? 'L' : 'M'}${xS(p.t).toFixed(1)} ${yS(val(p, s.key)).toFixed(1)}`).join(' ');
+      return `<path d="${top} L${xS(t1).toFixed(1)} ${baseY.toFixed(1)} L${xS(t0).toFixed(1)} ${baseY.toFixed(1)} Z" fill="${s.fill}" stroke="none"/>`;
+    }).join('');
     const lines = series.map(s => {
       const d = pts.map((p, i) => `${i ? 'L' : 'M'}${xS(p.t).toFixed(1)} ${yS(val(p, s.key)).toFixed(1)}`).join(' ');
-      return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.8"/>`;
+      return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     }).join('');
+    // End dots at the latest point.
+    const last = pts[pts.length - 1];
+    const dots = series.map(s => `<circle cx="${xS(last.t).toFixed(1)}" cy="${yS(val(last, s.key)).toFixed(1)}" r="3" fill="${s.color}" stroke="#fff" stroke-width="1.2"/>`).join('');
 
     const fmtD = ms => { const d = new Date(ms); return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
     let xLbls = '';
     [0, 0.5, 1].forEach(f => { const t = t0 + (t1 - t0) * f; xLbls += `<text x="${xS(t).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="var(--text-muted)" font-family="Inter,sans-serif">${fmtD(t)}</text>`; });
 
-    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:280px">${grid}${zero}${yLbls}${lines}${xLbls}</svg>`;
+    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:280px">${grid}${zero}${yLbls}${areas}${lines}${dots}${xLbls}</svg>`;
   }
 
   function _link(page, title, sub) {

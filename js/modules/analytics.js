@@ -87,15 +87,18 @@ const Analytics = (() => {
     return { ...totals, byYear: Object.values(years).sort((a, b) => b.year - a.year) };
   }
 
-  /* Current cash balance (ILS) = most recent row's running CashBalanceILS. */
+  /* Current total cash (ILS) = SUM of each portfolio's most recent running
+     CashBalanceILS. CashBalanceILS is per-portfolio, so summing the latest
+     balance of every portfolio gives the real account-wide cash. */
   function latestCashILS(txns) {
-    let best = null, bestTs = -Infinity;
-    (txns || []).forEach(r => {
-      const ts = new Date(r.Date).getTime();
-      const bal = n(r.CashBalanceILS);
-      if (isFinite(ts) && ts >= bestTs && Math.abs(bal) > 0.0001) { bestTs = ts; best = bal; }
-    });
-    return best;   // null if unknown
+    const latestByPort = {};
+    (txns || [])
+      .map(r => ({ ts: new Date(r.Date).getTime(), port: (r.Portfolio || '').trim(), bal: n(r.CashBalanceILS) }))
+      .filter(x => isFinite(x.ts) && Math.abs(x.bal) > 0.0001)
+      .sort((a, b) => a.ts - b.ts)
+      .forEach(x => { latestByPort[x.port] = x.bal; });
+    const keys = Object.keys(latestByPort);
+    return keys.length ? keys.reduce((s, k) => s + latestByPort[k], 0) : null;
   }
 
   return { cashSummary, taxSummary, latestCashILS };

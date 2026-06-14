@@ -63,6 +63,17 @@
   cursor: pointer;
 }
 
+/* ── Chart header with inline controls ── */
+.pf-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.pf-chart-ctls { display: flex; gap: 14px; flex-wrap: wrap; }
+
 /* ── Returns chart tooltip ── */
 .ret-chart-wrap { position: relative; }
 .ret-bar { transition: opacity 0.1s ease; }

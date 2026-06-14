@@ -742,6 +742,42 @@ Pages.portfolio = (() => {
       });
   }
 
+  /* Holding snapshots over time for a symbol (FIFO), for the drag-window stats.
+     qty is in the share-units current as of each snapshot (splits applied);
+     cost is $ (split-invariant); realized is cumulative $. */
+  function _symSnapshots(symbol, portFilter) {
+    const rows = _symbolRows(symbol).filter(r => portFilter === 'all' || (r.Portfolio || '').trim() === portFilter);
+    let qty = 0, lots = [], realized = 0;
+    const snaps = [{ t: -Infinity, qty: 0, cost: 0, realized: 0 }], splitEv = [];
+    rows.forEach(r => {
+      const q = Math.abs(n(r.Qty)), t = new Date(r.Date).getTime();
+      if (r.subCategory === 'SPLIT') {
+        if (qty > 0.001 && q > 0) { const ratio = (qty + q) / qty; qty += q; lots.forEach(l => { l.qty *= ratio; l.cps /= ratio; }); splitEv.push({ t, ratio }); }
+      } else {
+        if (!q) return;
+        const isBuy = r.subCategory === 'BUY_STOCK' || (r.Type || '').includes('קני');
+        const price = Math.abs(n(r.ExecutionRate));
+        const cps = price > 0 ? price : Math.abs(n(r.TotalFX)) / q;
+        if (isBuy) { lots.push({ qty: q, cps }); qty += q; }
+        else { let rem = q, cost = 0; while (rem > 0.0001 && lots.length) { const lot = lots[0]; if (lot.qty > rem) { cost += rem * lot.cps; lot.qty -= rem; rem = 0; } else { cost += lot.qty * lot.cps; rem -= lot.qty; lots.shift(); } } realized += q * price - cost; qty -= q; if (qty < -0.0001) { qty = 0; lots = []; } }
+      }
+      snaps.push({ t, qty, cost: lots.reduce((s, l) => s + l.qty * l.cps, 0), realized });
+    });
+    return { snaps, splitEv };
+  }
+
+  function _stateAt(snaps, t) {
+    let best = snaps[0];
+    for (let i = 0; i < snaps.length; i++) { if (snaps[i].t <= t) best = snaps[i]; else break; }
+    return best;
+  }
+  function _factorAfter(splitEv, t) { let f = 1; (splitEv || []).forEach(e => { if (e.t > t) f *= e.ratio; }); return f; }
+  function _histCloseAt(history, t) {
+    let c = null;
+    for (let i = 0; i < history.length; i++) { const ht = new Date(history[i].date).getTime(); if (ht <= t) c = parseFloat(history[i].close); else break; }
+    return c;
+  }
+
   const RANGE_DAYS = { '1M': 30, '6M': 182, '1Y': 365, 'ALL': Infinity };
 
   async function _openStockModal(symbol) {
@@ -797,7 +833,9 @@ Pages.portfolio = (() => {
     if (!_modalEl) return;   // closed while loading
 
     const trades = _splitAdjustedTrades(symbol, _portFilter);
-    _modalState = { symbol, history: history || [], trades, range: 'ALL' };
+    const hist = (history || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+    const { snaps, splitEv } = _symSnapshots(symbol, _portFilter);
+    _modalState = { symbol, history: hist, trades, snaps, splitEv, range: 'ALL' };
     _renderModalBody();
   }
 
@@ -836,11 +874,14 @@ Pages.portfolio = (() => {
           ${Object.keys(RANGE_DAYS).map(k => `<button class="pf-range-btn${k === range ? ' active' : ''}" data-range="${k}">${k === 'ALL' ? 'הכל' : k.replace('M','ח').replace('Y','ש')}</button>`).join('')}
         </div>
       </div>
-      <div class="pf-modal-chart">${_renderStockChart()}</div>
+      <div class="pf-modal-chart">${_renderStockChart()}<div class="pf-sel-info" id="pf-sel-info"></div></div>
       <div class="pf-modal-legend">
         <span><span class="pf-dot" style="background:#059669"></span>קנייה</span>
         <span><span class="pf-dot" style="background:#DC2626"></span>מכירה</span>
         <span><span class="pf-dot" style="background:#2563EB"></span>מחיר סגירה</span>
+        <span><span class="pf-dash" style="border-color:#059669"></span>פתיחת פוזיציה</span>
+        <span><span class="pf-dash" style="border-color:#DC2626"></span>סגירת פוזיציה</span>
+        <span class="pf-modal-hint">גרור על הגרף לבחירת טווח</span>
       </div>
       ${_renderModalTxns()}`;
 
@@ -853,6 +894,48 @@ Pages.portfolio = (() => {
         _renderModalBody();
       })
     );
+    _bindChartDrag(modal);
+  }
+
+  /* Drag-to-select on the stock chart: two lines + window stats. */
+  function _bindChartDrag(modal) {
+    const svg = modal.querySelector('#pf-stock-svg');
+    const info = modal.querySelector('#pf-sel-info');
+    if (!svg || !info || !_modalState.meta) return;
+    const m = _modalState.meta;
+    const sym = currSym();
+    const xToDate = clientX => {
+      const r = svg.getBoundingClientRect();
+      const vx = (clientX - r.left) / r.width * m.W;
+      const frac = Math.min(1, Math.max(0, (vx - m.padL) / (m.W - m.padL - m.padR)));
+      return m.t0 + frac * (m.t1 - m.t0);
+    };
+    const g = svg.querySelector('.pf-sel-g');
+    let dragging = false, d0 = null;
+
+    const draw = (a, b) => {
+      const x0 = m.xS(a), x1 = m.xS(b);
+      g.innerHTML = `
+        <rect x="${Math.min(x0, x1).toFixed(1)}" y="12" width="${Math.abs(x1 - x0).toFixed(1)}" height="222" fill="rgba(37,99,235,0.10)"/>
+        <line x1="${x0.toFixed(1)}" y1="12" x2="${x0.toFixed(1)}" y2="234" stroke="#2563EB" stroke-width="1.2"/>
+        <line x1="${x1.toFixed(1)}" y1="12" x2="${x1.toFixed(1)}" y2="234" stroke="#2563EB" stroke-width="1.2"/>`;
+      const s = m.statWindow(a, b);
+      const d = ms => new Date(ms).toLocaleDateString('he-IL');
+      const sign = v => v >= 0 ? '+' : '−';
+      const cls = v => v >= 0 ? 'pos' : 'neg';
+      info.style.display = 'block';
+      info.innerHTML = `
+        <div class="pf-sel-dates">${d(s.lo)} ← ${d(s.hi)}</div>
+        <div class="pf-sel-row"><span>שינוי המניה</span><span class="${cls(s.stockPct || 0)}">${s.stockPct == null ? '—' : sign(s.stockPct) + Math.abs(s.stockPct).toFixed(2) + '%'}</span></div>
+        <div class="pf-sel-row"><span>שינוי כמות</span><span>${s.qtyChange >= 0 ? '+' : '−'}${Math.abs(s.qtyChange).toLocaleString('he-IL', { maximumFractionDigits: 2 })} מ' (${s.sharesStart.toFixed(0)}→${s.sharesEnd.toFixed(0)})</span></div>
+        <div class="pf-sel-row"><span>רווח/הפסד באחזקה</span><span class="${cls(s.posPnl)}">${sign(s.posPnl)}${sym}${fmtMoney(toDisplay(Math.abs(s.posPnl)))} (${sign(s.posPct)}${Math.abs(s.posPct).toFixed(2)}%)</span></div>`;
+    };
+
+    svg.addEventListener('mousedown', e => { dragging = true; d0 = xToDate(e.clientX); draw(d0, d0); e.preventDefault(); });
+    svg.addEventListener('mousemove', e => { if (dragging) draw(d0, xToDate(e.clientX)); });
+    const end = e => { if (dragging) { dragging = false; draw(d0, xToDate(e.clientX)); } };
+    svg.addEventListener('mouseup', end);
+    svg.addEventListener('mouseleave', end);
   }
 
   /* Lifetime realized P&L for a symbol (all sells ever), scoped by filter.
@@ -965,11 +1048,43 @@ Pages.portfolio = (() => {
         <title>${tr.side === 'BUY' ? 'קנייה' : 'מכירה'} ${tr.dateStr} · ${tr.rawQty} @ $${tr.rawPrice.toFixed(2)}</title></circle>`;
     }).join('');
 
-    return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+    // Position open/close events (qty crossing zero) → thin vertical markers.
+    const evs = []; let prevQ = 0;
+    (_modalState.snaps || []).forEach(sn => {
+      if (sn.t === -Infinity) { prevQ = sn.qty; return; }
+      if (prevQ <= 0.0001 && sn.qty > 0.0001) evs.push({ t: sn.t, type: 'open' });
+      if (prevQ > 0.0001 && sn.qty <= 0.0001) evs.push({ t: sn.t, type: 'close' });
+      prevQ = sn.qty;
+    });
+    const posMarks = evs.filter(e => e.t >= t0 && e.t <= t1).map(e => {
+      const x = xS(e.t), col = e.type === 'open' ? '#059669' : '#DC2626';
+      return `<line x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${(H - padB).toFixed(1)}" stroke="${col}" stroke-width="1" stroke-dasharray="2 2" opacity="0.55"><title>${e.type === 'open' ? 'נפתחה פוזיציה' : 'נסגרה פוזיציה'} · ${new Date(e.t).toLocaleDateString('he-IL')}</title></line>`;
+    }).join('');
+
+    // Expose scales + a window-stats closure for the drag-to-select handler.
+    const histLocal = history, snapsLocal = _modalState.snaps, splitLocal = _modalState.splitEv;
+    _modalState.meta = {
+      xS, t0, t1, W, padL, padR,
+      statWindow(d0, d1) {
+        const lo = Math.min(d0, d1), hi = Math.max(d0, d1);
+        const p0 = _histCloseAt(histLocal, lo), p1 = _histCloseAt(histLocal, hi);
+        const s0 = _stateAt(snapsLocal, lo), s1 = _stateAt(snapsLocal, hi);
+        const sh0 = s0.qty * _factorAfter(splitLocal, lo), sh1 = s1.qty * _factorAfter(splitLocal, hi);
+        const v0 = p0 != null ? sh0 * p0 : 0, v1 = p1 != null ? sh1 * p1 : 0;
+        const posPnl = (v1 - s1.cost + s1.realized) - (v0 - s0.cost + s0.realized);
+        const base = v0 || s0.cost || Math.abs(posPnl) || 1;
+        return { lo, hi, stockPct: (p0 && p1) ? (p1 / p0 - 1) * 100 : null,
+                 sharesStart: sh0, sharesEnd: sh1, qtyChange: sh1 - sh0,
+                 posPnl, posPct: posPnl / base * 100 };
+      },
+    };
+
+    return `<svg id="pf-stock-svg" width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" style="cursor:crosshair">
       ${grid}${yLbls}
       <path d="${area}" fill="rgba(37,99,235,0.07)" stroke="none"/>
       <path d="${line}" fill="none" stroke="#2563EB" stroke-width="1.6"/>
-      ${markers}${xLbls}
+      ${posMarks}${markers}${xLbls}
+      <g class="pf-sel-g"></g>
     </svg>`;
   }
 

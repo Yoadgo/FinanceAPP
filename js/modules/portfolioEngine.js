@@ -303,10 +303,10 @@ const PortfolioEngine = (() => {
       .map(c => ({ t: new Date(c.sellDate).getTime(), pnl: c.pnl, symbol: c.symbol }))
       .sort((a, b) => a.t - b.t);
 
-    // Cash = the broker's actual running CashBalanceILS (→USD), not a
-    // reconstruction — so the line matches the real account balance.
+    // Cash = sum of each portfolio's running CashBalanceILS (→USD). It's a
+    // per-portfolio balance, so we track the latest per portfolio and sum.
     const cashBal = txns
-      .map(r => ({ t: new Date(r.Date).getTime(), ils: n(r.CashBalanceILS) }))
+      .map(r => ({ t: new Date(r.Date).getTime(), port: (r.Portfolio || '').trim(), ils: n(r.CashBalanceILS) }))
       .filter(x => isFinite(x.t) && Math.abs(x.ils) > 0.0001)
       .sort((a, b) => a.t - b.t);
 
@@ -366,9 +366,11 @@ const PortfolioEngine = (() => {
 
     const points = [];
     const realBySym = {};
-    let cashIls = 0, realized = 0, cbi = 0, ri = 0;
+    const cashByPort = {};
+    let realized = 0, cbi = 0, ri = 0;
     grid.forEach(gt => {
-      while (cbi < cashBal.length && cashBal[cbi].t <= gt) cashIls = cashBal[cbi++].ils;
+      while (cbi < cashBal.length && cashBal[cbi].t <= gt) { cashByPort[cashBal[cbi].port] = cashBal[cbi].ils; cbi++; }
+      const cashIls = Object.values(cashByPort).reduce((s, v) => s + v, 0);
       const cash = fxRate ? cashIls / fxRate : cashIls;
       while (ri < closedAsc.length && closedAsc[ri].t <= gt) {
         realized += closedAsc[ri].pnl;
