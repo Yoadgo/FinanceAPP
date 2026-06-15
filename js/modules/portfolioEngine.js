@@ -310,6 +310,19 @@ const PortfolioEngine = (() => {
       .filter(x => isFinite(x.t) && Math.abs(x.ils) > 0.0001)
       .sort((a, b) => a.t - b.t);
 
+    // Invested capital (net deposits) and cash adjustments (income − costs),
+    // both cumulative in USD — used for the "invested vs value" view.
+    const invDeltas = [], adjDeltas = [];
+    txns.forEach(r => {
+      const t = new Date(r.Date).getTime(); if (!isFinite(t)) return;
+      const sub = r.subCategory, usd = _usdAmt(r, fxRate);
+      if (sub === 'DEPOSIT') { const ils = n(r.TotalILS); const v = fxRate ? ils / fxRate : ils; if (Math.abs(v) > 0.0001) invDeltas.push({ t, d: v }); }
+      else if (sub === 'CASH_DIVIDEND' || sub === 'CREDIT_INTEREST' || sub === 'TAX_REFUND') adjDeltas.push({ t, d: usd });
+      else if (sub === 'TRADE_COMMISSION' || sub === 'MGMT_FEE' || sub === 'DEBIT_INTEREST' || sub === 'CAPITAL_GAIN_TAX' || sub === 'DIVIDEND_TAX' || sub === 'TAX_PAYMENT') adjDeltas.push({ t, d: -usd });
+    });
+    invDeltas.sort((a, b) => a.t - b.t);
+    adjDeltas.sort((a, b) => a.t - b.t);
+
     // Price history → sorted arrays + advancing pointers.
     const hist = {}, ptr = {};
     Object.entries(historyMap || {}).forEach(([s, rows]) => {
@@ -367,9 +380,11 @@ const PortfolioEngine = (() => {
     const points = [];
     const realBySym = {};
     const cashByPort = {};
-    let realized = 0, cbi = 0, ri = 0;
+    let realized = 0, cbi = 0, ri = 0, invested = 0, cashAdj = 0, ii = 0, ai = 0;
     grid.forEach(gt => {
       while (cbi < cashBal.length && cashBal[cbi].t <= gt) { cashByPort[cashBal[cbi].port] = cashBal[cbi].ils; cbi++; }
+      while (ii < invDeltas.length && invDeltas[ii].t <= gt) invested += invDeltas[ii++].d;
+      while (ai < adjDeltas.length && adjDeltas[ai].t <= gt) cashAdj += adjDeltas[ai++].d;
       const cashIls = Object.values(cashByPort).reduce((s, v) => s + v, 0);
       const cash = fxRate ? cashIls / fxRate : cashIls;
       while (ri < closedAsc.length && closedAsc[ri].t <= gt) {
@@ -403,7 +418,7 @@ const PortfolioEngine = (() => {
         }
         bySym[sym] = unrSym + (realBySym[sym] || 0);
       });
-      points.push({ t: gt, cash, realized, unrealized: mv - costBasis, marketValue: mv, bySym });
+      points.push({ t: gt, cash, realized, unrealized: mv - costBasis, marketValue: mv, invested, cashAdj, bySym });
     });
     return points;
   }

@@ -85,16 +85,21 @@ Pages.dashboard = (() => {
         try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
       }));
       const curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
-      const cashILS = Analytics.latestCashILS(txns);
-      const cashUSD = cashILS == null ? null : (_fxRate ? cashILS / _fxRate : cashILS);
+      // Coherent net worth (accounting identity, currency-consistent):
+      //   netWorth = invested + realized + unrealized + cashAdj  (= holdings + total cash)
+      // Avoids the ILS-only CashBalanceILS which understated cash (margin overdraft).
+      const lastPt   = curve.length ? curve[curve.length - 1] : { invested: 0, cashAdj: 0 };
+      const invested = lastPt.invested || 0;
+      const cashAdj  = lastPt.cashAdj || 0;
+      const netWorth = invested + realized + (mktVal - cost) + cashAdj;
+      const impliedCash = netWorth - mktVal;   // total cash (uninvested + realized + income − costs)
 
       _state = {
         mktVal, cost, dayChange, posCount: positions.length, priced,
         unrealized: mktVal - cost,
         unrealizedPct: cost > 0 ? ((mktVal - cost) / cost) * 100 : 0,
         dayChangePct: (mktVal - dayChange) > 0 ? (dayChange / (mktVal - dayChange)) * 100 : 0,
-        realized, cash, cashUSD, curve,
-        netWorth: mktVal + (cashUSD || 0),
+        realized, cash, cashUSD: impliedCash, invested, cashAdj, curve, netWorth,
       };
       App.setDataStatus('live');
       _paint();
@@ -154,7 +159,7 @@ Pages.dashboard = (() => {
     const chart = `
       <div class="pf-chart-card" style="margin-top:14px">
         <div class="pf-chart-head">
-          <div class="pf-chart-title">התפתחות לאורך זמן — מזומן, רווח ממומש ופוטנציאלי</div>
+          <div class="pf-chart-title">התפתחות לאורך זמן — הון שהושקע מול שווי התיק</div>
           <div class="pf-chart-ctls">
             <label class="ret-ctl">טווח:
               <select id="eq-range">${opt('quarter', _eqRange, 'רבעון')}${opt('year', _eqRange, 'שנה')}${opt('all', _eqRange, 'מההתחלה')}</select>
@@ -166,9 +171,9 @@ Pages.dashboard = (() => {
         </div>
         ${_renderEquityChart()}
         <div class="pf-bar-legend" style="margin-top:6px">
-          <span><span class="pf-leg-dot" style="background:#2563EB"></span>מזומן</span>
-          <span><span class="pf-leg-dot" style="background:#059669"></span>רווח ממומש (מצטבר)</span>
-          <span><span class="pf-leg-dot" style="background:#D97706"></span>רווח פוטנציאלי (לא ממומש)</span>
+          <span><span class="pf-leg-dot" style="background:#059669"></span>שווי התיק</span>
+          <span><span class="pf-leg-dot" style="background:#2563EB"></span>הון שהושקע (הפקדות מצטברות)</span>
+          <span style="color:var(--text-muted)">הפער = רווח/הפסד</span>
         </div>
       </div>`;
 
@@ -203,17 +208,19 @@ Pages.dashboard = (() => {
     return out;
   }
 
-  /* Multi-line time chart: cash / realized / unrealized (with area fills). */
+  /* Time chart: invested capital vs total portfolio value (gap = profit).
+     value = invested + realized + unrealized + cashAdj  (accounting identity,
+     so it doesn't depend on the unreliable ILS-only cash balance). */
+  const _eqValue = p => (p.invested || 0) + (p.realized || 0) + (p.unrealized || 0) + (p.cashAdj || 0);
   function _renderEquityChart() {
     const pts = _eqPoints();
     if (pts.length < 2) return '<p class="pf-no-data">אין מספיק היסטוריה להצגת גרף</p>';
 
     const series = [
-      { key: 'unrealized', color: '#D97706', fill: 'rgba(217,119,6,0.10)' },
-      { key: 'realized',   color: '#059669', fill: 'rgba(5,150,105,0.10)' },
-      { key: 'cash',       color: '#2563EB', fill: 'rgba(37,99,235,0.08)' },
+      { key: 'value',    color: '#059669', fill: 'rgba(5,150,105,0.12)' },
+      { key: 'invested', color: '#2563EB', fill: 'rgba(37,99,235,0.06)' },
     ];
-    const val = (p, k) => toDisplay(p[k]) ?? 0;
+    const val = (p, k) => toDisplay(k === 'value' ? _eqValue(p) : (p.invested || 0)) ?? 0;
 
     const W = 900, H = 280, padL = 62, padR = 16, padT = 14, padB = 26;
     const t0 = pts[0].t, t1 = pts[pts.length - 1].t || (t0 + 1);
