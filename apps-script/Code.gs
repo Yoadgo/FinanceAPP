@@ -41,6 +41,132 @@ const CFG = {
   historyDefaultLimit: 4000
 };
 
+// =================== אימות ומושבים ===================
+/*
+ * המצב לפני הבלוק הזה: הפריסה פתוחה ל"כולם", הלקוח שולח fetch בלי שום אסימון,
+ * וכתובת ה-/exec יושבת בריפו ציבורי. כלומר כל מי שמחזיק בכתובת קורא את כל
+ * התנועות. הבלוק הזה סוגר את זה ברמת האפליקציה ולא ברמת הפריסה — וזה מכוון:
+ * הלקוח הוא אתר סטטי שקורא cross-origin בלי עוגיות, אז פריסה שדורשת חשבון
+ * גוגל הייתה מחזירה דף התחברות במקום JSON ושוברת את האפליקציה. ההגנה חייבת
+ * לשבת בתוך doGet.
+ *
+ * המושב: מחרוזת חתומה HMAC-SHA256 בצורה  base64(email|exp|epoch).signature
+ *   • email  — מי התחבר.
+ *   • exp    — מתי פג. אחרי זה הלקוח מתבקש להתחבר שוב.
+ *   • epoch  — "דור" המושבים. העלאת הדור מבטלת בבת אחת את כל המושבים בכל
+ *              המכשירים, בלי לגעת בסוד ובלי לשנות שום דבר אחר.
+ * הסוד עצמו נוצר פעם אחת ונשמר ב-Script Properties. הוא לעולם לא בקוד —
+ * הריפו ציבורי.
+ *
+ * AUTH.require הוא מתג ההפעלה, והוא **false בכוונה**. כך אפשר להעלות את הקוד
+ * לייצור בלי לשבור כלום, לבנות את הלקוח, לוודא שהוא מקבל מושב ושולח אותו,
+ * ורק אז להעביר את המתג ל-true בשינוי של שורה אחת. שלוש פריסות קטנות
+ * במקום אחת גדולה שיכולה להשאיר אותך בחוץ.
+ */
+var AUTH = {
+  require: false,        // ← המתג. להעביר ל-true רק אחרי שהלקוח מתחבר בהצלחה.
+  ttlDays: 30,
+  pSecret: 'SESSION_SECRET',
+  pEpoch:  'SESSION_EPOCH',
+  pPass:   'ACCESS_PASSPHRASE'
+};
+
+/* נקודות קצה שמותרות בלי מושב. health נשאר פתוח כדי שהלקוח יוכל לבדוק חיבור
+   לפני שהוא בכלל יודע אם יש לו מושב — אבל הוא מחזיר פחות כשאין. */
+var AUTH_PUBLIC = { health: true, login: true };
+
+function props_() { return PropertiesService.getScriptProperties(); }
+
+function sessionSecret_() {
+  var p = props_(), s = p.getProperty(AUTH.pSecret);
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); p.setProperty(AUTH.pSecret, s); }
+  return s;
+}
+
+function sessionEpoch_() {
+  var p = props_(), e = p.getProperty(AUTH.pEpoch);
+  if (!e) { e = '1'; p.setProperty(AUTH.pEpoch, e); }
+  return e;
+}
+
+function b64_(str) {
+  return Utilities.base64EncodeWebSafe(str).replace(/=+$/, '');
+}
+
+function sign_(payload) {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(payload, sessionSecret_())
+  ).replace(/=+$/, '');
+}
+
+function makeSession_(email) {
+  var payload = [email, Date.now() + AUTH.ttlDays * 86400000, sessionEpoch_()].join('|');
+  return b64_(payload) + '.' + sign_(payload);
+}
+
+/** מחזירה { email, exp } למושב תקין, או null. לא זורקת — הקורא מחליט. */
+function verifySession_(token) {
+  if (!token) return null;
+  var parts = String(token).split('.');
+  if (parts.length !== 2) return null;
+
+  var payload;
+  try {
+    payload = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString();
+  } catch (e) { return null; }
+
+  if (sign_(payload) !== parts[1]) return null;      // חתימה לא תואמת
+  var f = payload.split('|');
+  if (f.length !== 3) return null;
+  if (Number(f[1]) < Date.now()) return null;        // פג תוקף
+  if (f[2] !== sessionEpoch_()) return null;         // דור ישן — בוטל
+  return { email: f[0], exp: Number(f[1]) };
+}
+
+/** התחברות בסיסמה. השהייה מכוונת בכישלון — מייקרת ניחוש בכוח גס. */
+function handleLogin_(params) {
+  var expected = props_().getProperty(AUTH.pPass);
+  if (!expected) throw new Error('ACCESS_PASSPHRASE not set');
+  if (String(params.pass || '') !== expected) {
+    Utilities.sleep(700);
+    throw new Error('unauthorized');
+  }
+  return { session: makeSession_('owner'), expiresInDays: AUTH.ttlDays };
+}
+
+/* ---------- להרצה ידנית מהעורך ---------- */
+
+/** פעם אחת: יוצרת סוד, דור, וסיסמת גישה אם אין. הסיסמה נדפסת ליומן הביצוע. */
+function setupAuth() {
+  sessionSecret_();
+  sessionEpoch_();
+  var p = props_();
+  if (!p.getProperty(AUTH.pPass)) {
+    p.setProperty(AUTH.pPass, Utilities.getUuid().slice(0, 8));
+  }
+  Logger.log('ACCESS_PASSPHRASE: ' + p.getProperty(AUTH.pPass));
+  Logger.log('SESSION_EPOCH: ' + p.getProperty(AUTH.pEpoch));
+  return 'ok';
+}
+
+/** מתג חירום. מנתק כל מכשיר, מיד. הסיסמה עצמה לא משתנה. */
+function revokeAllSessions() {
+  var p = props_();
+  var next = String(Number(sessionEpoch_()) + 1);
+  p.setProperty(AUTH.pEpoch, next);
+  Logger.log('כל המושבים בוטלו. דור חדש: ' + next);
+  return next;
+}
+
+/** מחליפה את סיסמת הגישה ומנתקת את כל המכשירים באותה פעולה. */
+function rotatePassphrase() {
+  var pass = Utilities.getUuid().slice(0, 8);
+  props_().setProperty(AUTH.pPass, pass);
+  revokeAllSessions();
+  Logger.log('ACCESS_PASSPHRASE חדש: ' + pass);
+  return pass;
+}
+
 // =================== MENU ===================
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -632,13 +758,25 @@ function api_(resource, params) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const r = String(resource || "").trim().toLowerCase();
 
+  // ── שער האימות ──
+  // כל מה שאינו ב-AUTH_PUBLIC דורש מושב תקין. כרגע AUTH.require הוא false,
+  // כלומר השער פתוח והכול עובד כמו קודם. הפיכתו ל-true סוגרת את הנתונים.
+  const session = AUTH.require && !AUTH_PUBLIC[r] ? verifySession_(params.session) : null;
+  if (AUTH.require && !AUTH_PUBLIC[r] && !session) throw new Error("unauthorized");
+
+  if (r === "login") return handleLogin_(params);
+
   if (r === "health") {
     let fx = null;
     try { fx = getFxUsdIls_(ss); } catch (e) { fx = { status: "error", message: String(e?.message || e) }; }
 
+    // רשימת הטאבים היא מידע על המבנה. כשהשער סגור היא נמסרת רק למי שמחובר.
+    const known = !AUTH.require || !!verifySession_(params.session);
     return {
-      spreadsheetId: ss.getId(),
-      sheets: ss.getSheets().map(s => s.getName()),
+      spreadsheetId: known ? ss.getId() : undefined,
+      sheets: known ? ss.getSheets().map(s => s.getName()) : undefined,
+      authRequired: AUTH.require,
+      authenticated: known,
       now: new Date().toISOString(),
       fx
     };

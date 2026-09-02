@@ -10,9 +10,15 @@ const DataService = (() => {
   let _cache = {};
   let _lastFetch = {};
 
-  /* ---- Core fetch (follows Google's redirect) ---- */
+  /* ---- Core fetch (follows Google's redirect) ----
+     כל בקשה נושאת את המושב אם יש. השרת מתעלם ממנו כל עוד המתג שם כבוי,
+     ולכן אפשר להעלות את הצד הזה לייצור לפני שסוגרים את השער.
+     תשובת "unauthorized" מנקה את המושב ומסמנת את השגיאה, כדי שהקורא
+     יוכל להעלות את שער הכניסה במקום להציג הודעת שגיאה סתמית.            */
   async function _fetch(params = {}) {
     const url = new URL(API_URL);
+    const sess = (window.FA && FA.session) ? FA.session.get() : null;
+    if (sess && !params.session) params = { ...params, session: sess };
     Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, v));
 
     const res = await fetch(url.toString(), { method: "GET", redirect: "follow" });
@@ -21,8 +27,43 @@ const DataService = (() => {
     const data = JSON.parse(text);
     // Handle both {status:"error", message:"..."} and {ok:false, error:"..."}
     if (data.status === "error" || data.ok === false) {
-      throw new Error(data.message || data.error || "API Error");
+      const msg = data.message || data.error || "API Error";
+      if (/unauthorized/i.test(msg)) {
+        // מטפלים כאן ולא רק זורקים: חלק מהקריאות עטופות ב-catch משלהן
+        // (מחירים חיים, היסטוריה), ואם נסתפק בזריקה — המושב יתנקה בשקט
+        // והמשתמש יישאר מול נתוני מטמון בלי לדעת שהוא כבר לא מחובר.
+        if (window.FA && FA.session) {
+          FA.session.clear();
+          clearCache();                       // לא להגיש מטמון למי שאינו מורשה
+          if (!FA.session.isOpen()) {
+            FA.session.open(function () {
+              // App מוגדר ב-const ברמת הסקריפט, ולכן הוא **לא** נעשה מאפיין
+              // של window. הבדיקה חייבת להיות typeof ולא window.App —
+              // אחרת הקריאה החוזרת אחרי התחברות לא רצה בכלל.
+              if (typeof App !== "undefined" && App.refreshData) App.refreshData();
+            });
+          }
+        }
+        const e = new Error("unauthorized");
+        e.unauthorized = true;
+        throw e;
+      }
+      throw new Error(msg);
     }
+    return data;
+  }
+
+  /* ---- התחברות ----
+     עוקפת את המטמון ואת צירוף המושב: זו הבקשה שמייצרת אותו.            */
+  async function login(pass) {
+    const url = new URL(API_URL);
+    url.searchParams.append("resource", "login");
+    url.searchParams.append("pass", pass);
+    const res = await fetch(url.toString(), { method: "GET", redirect: "follow" });
+    const text = await res.text();
+    if (text.trim().startsWith("<")) throw new Error("Received HTML — check Apps Script permissions.");
+    const data = JSON.parse(text);
+    if (data.ok === false) throw new Error(data.error || "unauthorized");
     return data;
   }
 
@@ -161,5 +202,5 @@ const DataService = (() => {
     return data;
   }
 
-  return { getHealth, getTransactions, getStockHistory, getFxRate, getRealTimeData, clearCache };
+  return { getHealth, getTransactions, getStockHistory, getFxRate, getRealTimeData, clearCache, login };
 })();

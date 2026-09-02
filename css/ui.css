@@ -139,3 +139,42 @@
 @media (prefers-reduced-motion: reduce) {
   .skeleton::after, .sk-stagger > *, .fa-toast, .fa-dlg, .fa-dlg-backdrop { animation: none !important; }
 }
+
+
+/* ---------- שער כניסה ----------
+   שכבה מלאה מעל הכול. נבנית כילד ישיר של body — אותה מלכודת של backdrop-filter
+   שתוארה למעלה. מוצגת רק כשהשרת החזיר "unauthorized". */
+.fa-gate {
+  position: fixed; inset: 0; z-index: 5000;
+  display: grid; place-items: center; padding: 24px;
+  background: var(--bg-page);
+}
+.fa-gate__card {
+  width: min(360px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 60px -24px rgba(16,24,40,.30);
+  padding: 30px 28px 24px;
+  text-align: center;
+}
+.fa-gate__logo { height: 44px; width: auto; margin-bottom: 14px; }
+.fa-gate__title { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+.fa-gate__sub {
+  font-size: 13px; color: var(--text-muted);
+  margin-top: 5px; margin-bottom: 20px; line-height: 1.6;
+}
+.fa-gate__input {
+  width: 100%; font-family: 'Roboto Mono', monospace; font-size: 15px;
+  text-align: center; letter-spacing: .08em; direction: ltr;
+  padding: 11px 14px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--bg-subtle);
+  color: var(--text-primary); outline: none;
+  transition: border-color var(--transition), background var(--transition);
+}
+.fa-gate__input:focus { border-color: var(--text-secondary); background: var(--bg-surface); }
+.fa-gate__btn { width: 100%; margin-top: 12px; padding: 11px; }
+.fa-gate__err {
+  font-size: 12.5px; color: var(--danger); font-weight: 600;
+  margin-top: 12px; min-height: 17px;
+}

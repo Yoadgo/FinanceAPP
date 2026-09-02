@@ -37,6 +37,11 @@ const App = (() => {
     renderSidebar();
     renderTopbar();
     renderBottomNav();
+    // אם כבר ידוע מביקור קודם שנדרשת כניסה ואין מושב — לעלות עם השער ולא
+    // לשלוח בקשה שממילא תיכשל.
+    if (window.FA && FA.session && FA.session.needsAuth() && !FA.session.get()) {
+      FA.session.open(refreshData);
+    }
     renderContent(currentPage);
     bindGlobalEvents();
   }
@@ -298,6 +303,13 @@ const App = (() => {
     dataStatus = status;
     _lastErrorMsg = errorMsg || null;
 
+    // נקודת חיבור אחת לכל המסכים: כל מסך שנכשל ב-unauthorized מעלה את שער
+    // הכניסה. כך אף קובץ מסך לא צריך לדעת שקיים אימות בכלל.
+    if (status === "error" && /unauthorized/i.test(_lastErrorMsg || "") &&
+        window.FA && FA.session && !FA.session.isOpen()) {
+      FA.session.open(refreshData);
+    }
+
     const dot  = document.getElementById("status-dot");
     const text = document.getElementById("status-text");
     const pill = document.getElementById("data-status-pill");
@@ -351,7 +363,7 @@ const App = (() => {
 
   function getCurrency() { return _globalCurrency; }
 
-  return { init, navigateTo, setDataStatus, setFxRate, getCurrency };
+  return { init, navigateTo, setDataStatus, setFxRate, getCurrency, refreshData };
 })();
 
 /* ===== PAGES REGISTRY ===== */
