@@ -58,14 +58,14 @@ const CFG = {
  * הסוד עצמו נוצר פעם אחת ונשמר ב-Script Properties. הוא לעולם לא בקוד —
  * הריפו ציבורי.
  *
- * AUTH.require הוא מתג ההפעלה, והוא **false בכוונה**. כך אפשר להעלות את הקוד
- * לייצור בלי לשבור כלום, לבנות את הלקוח, לוודא שהוא מקבל מושב ושולח אותו,
- * ורק אז להעביר את המתג ל-true בשינוי של שורה אחת. שלוש פריסות קטנות
- * במקום אחת גדולה שיכולה להשאיר אותך בחוץ.
+ * המתג עצמו (AUTH_REQUIRED) יושב ב-Script Properties ולא בקוד. זה מכוון:
+ * הדלקה וכיבוי שלו לא דורשים פריסה מחדש, ולכן אם משהו משתבש אפשר לכבות
+ * אותו תוך שניות מהעורך במקום לעבור מחזור שלם של עריכה־שמירה־פריסה.
+ * enableAuth() / disableAuth() עושים בדיוק את זה.
  */
 var AUTH = {
-  require: false,        // ← המתג. להעביר ל-true רק אחרי שהלקוח מתחבר בהצלחה.
   ttlDays: 30,
+  pRequire: 'AUTH_REQUIRED',
   pSecret: 'SESSION_SECRET',
   pEpoch:  'SESSION_EPOCH',
   pPass:   'ACCESS_PASSPHRASE'
@@ -76,6 +76,15 @@ var AUTH = {
 var AUTH_PUBLIC = { health: true, login: true };
 
 function props_() { return PropertiesService.getScriptProperties(); }
+
+/* המתג נקרא פעם אחת לכל ריצה ונשמר בזיכרון — api_ בודק אותו כמה פעמים. */
+var _authRequireCache = null;
+function authRequired_() {
+  if (_authRequireCache === null) {
+    _authRequireCache = props_().getProperty(AUTH.pRequire) === '1';
+  }
+  return _authRequireCache;
+}
 
 function sessionSecret_() {
   var p = props_(), s = p.getProperty(AUTH.pSecret);
@@ -144,9 +153,25 @@ function setupAuth() {
   if (!p.getProperty(AUTH.pPass)) {
     p.setProperty(AUTH.pPass, Utilities.getUuid().slice(0, 8));
   }
+  if (p.getProperty(AUTH.pRequire) === null) p.setProperty(AUTH.pRequire, '0');
   Logger.log('ACCESS_PASSPHRASE: ' + p.getProperty(AUTH.pPass));
   Logger.log('SESSION_EPOCH: ' + p.getProperty(AUTH.pEpoch));
+  Logger.log('AUTH_REQUIRED: ' + p.getProperty(AUTH.pRequire));
   return 'ok';
+}
+
+/** מדליק את השער. מרגע זה כל בקשת נתונים דורשת מושב. אין צורך בפריסה. */
+function enableAuth() {
+  props_().setProperty(AUTH.pRequire, '1');
+  Logger.log('אימות נדרש: כן');
+  return 'on';
+}
+
+/** מכבה את השער — חזרה מיידית למצב פתוח. זו רשת הביטחון אם משהו נשבר. */
+function disableAuth() {
+  props_().setProperty(AUTH.pRequire, '0');
+  Logger.log('אימות נדרש: לא');
+  return 'off';
 }
 
 /** מתג חירום. מנתק כל מכשיר, מיד. הסיסמה עצמה לא משתנה. */
@@ -759,10 +784,10 @@ function api_(resource, params) {
   const r = String(resource || "").trim().toLowerCase();
 
   // ── שער האימות ──
-  // כל מה שאינו ב-AUTH_PUBLIC דורש מושב תקין. כרגע AUTH.require הוא false,
-  // כלומר השער פתוח והכול עובד כמו קודם. הפיכתו ל-true סוגרת את הנתונים.
-  const session = AUTH.require && !AUTH_PUBLIC[r] ? verifySession_(params.session) : null;
-  if (AUTH.require && !AUTH_PUBLIC[r] && !session) throw new Error("unauthorized");
+  // כל מה שאינו ב-AUTH_PUBLIC דורש מושב תקין. המתג נקרא מ-Script Properties,
+  // כך שאפשר לפתוח ולסגור בלי פריסה מחדש.
+  const gate = authRequired_() && !AUTH_PUBLIC[r];
+  if (gate && !verifySession_(params.session)) throw new Error("unauthorized");
 
   if (r === "login") return handleLogin_(params);
 
@@ -771,11 +796,11 @@ function api_(resource, params) {
     try { fx = getFxUsdIls_(ss); } catch (e) { fx = { status: "error", message: String(e?.message || e) }; }
 
     // רשימת הטאבים היא מידע על המבנה. כשהשער סגור היא נמסרת רק למי שמחובר.
-    const known = !AUTH.require || !!verifySession_(params.session);
+    const known = !authRequired_() || !!verifySession_(params.session);
     return {
       spreadsheetId: known ? ss.getId() : undefined,
       sheets: known ? ss.getSheets().map(s => s.getName()) : undefined,
-      authRequired: AUTH.require,
+      authRequired: authRequired_(),
       authenticated: known,
       now: new Date().toISOString(),
       fx
