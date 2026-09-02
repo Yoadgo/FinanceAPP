@@ -160,6 +160,9 @@ const App = (() => {
   /* ---- CONTENT ---- */
   function renderContent(pageId) {
     const content = document.getElementById("content");
+    // מזהה המסך על ה-body — css/tokens.css נשען עליו כדי לבחור את גוון העולם
+    // (השקעות / תזרים / חסכונות). ר' body[data-page] שם.
+    document.body.dataset.page = pageId;
     const module = Pages[pageId];
     if (module && typeof module.render === "function") {
       content.innerHTML = "";

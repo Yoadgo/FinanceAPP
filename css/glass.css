@@ -1,0 +1,174 @@
+/* ===== GLASS + MOTION — שכבה תוספתית ======================================
+   בהשראת Liquid Glass של iOS 27. נטענת אחרונה מבין קבצי ה-CSS ולא נוגעת באף
+   מסך: אם הקובץ הזה לא היה נטען, האפליקציה הייתה עובדת בדיוק אותו דבר, פשוט
+   בלי האפקטים. זו התכונה שמאפשרת להסיר או להחליף אותו בלי סיכון.
+
+   הכלל שקובע הכול: **זכוכית היא לכרום, לא לתוכן.** באפליקציה פיננסית המספר
+   הוא התוכן, וקריאוּת של ספרה גוברת על כל אפקט. לכן אין כאן שום backdrop-filter
+   על טבלה, על גרף או על כרטיס סטטיסטיקה — רק על מה שצף מעל התוכן.
+
+   מלכודת שכבר שולמה ב-CBA: אלמנט עם backdrop-filter הופך ל"שורש רקע" וחוסם
+   את הטשטוש של ילדיו. לכן כל מודאל/פופאפ חייב להיות ילד ישיר של body.
+   ========================================================================== */
+
+/* ---------- 1. סולם הרדיוסים על הרכיבים הקיימים ---------- */
+
+.card, .stat-card,
+.pf-card, .pf-chart-card, .pf-macro-card,
+.db-link, .db-hero,
+.jnl-card                         { border-radius: var(--r-md); }
+
+.pf-modal, .col-filter-popup      { border-radius: var(--r-lg); }
+
+.badge, .cat-badge, .pf-chg-badge { border-radius: var(--r-pill); }
+
+.icon-btn, .avatar,
+.topbar-curr-toggle, .topbar-curr-btn,
+.topbar-fx, .status-pill,
+.filter-btn, .date-filter-btn,
+.pf-filter-bar button             { border-radius: var(--r-pill); }
+
+.ret-ctl select                   { border-radius: var(--r-sm); }
+
+/* רדיוס קונצנטרי: הכרטיס 18, הריפוד 4 → הפנימי 14 */
+.pf-card-cell                     { border-radius: var(--r-sm); }
+
+
+/* ---------- 2. זכוכית — רק על מה שצף מעל תוכן ---------- */
+
+/* בר תחתון במובייל — מרחף מעל התוכן הנגלל, כאן הזכוכית באמת עובדת */
+#bottom-nav {
+  background: var(--glass-bg);
+  backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  border-top: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-spec), 0 -6px 24px -14px rgba(16,24,40,.30);
+}
+
+/* מודאל הנייר — אטימות 0.96. ב-CBA הוא התחיל ב-0.86 והוחזר ל-0.97 כי הטקסט
+   לא נקרא; באפליקציה פיננסית הטווח המותר למשטח שקוראים בו מספרים הוא 0.94–0.98. */
+.pf-modal {
+  background: var(--glass-bg-hi);
+  backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-spec), var(--glass-shadow);
+}
+
+/* פופאפ סינון העמודות ביומן, וטולטיפים */
+.col-filter-popup, .ret-tip, .error-tooltip {
+  background: var(--glass-bg-hi);
+  backdrop-filter: saturate(var(--glass-sat)) blur(14px);
+  -webkit-backdrop-filter: saturate(var(--glass-sat)) blur(14px);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-spec), var(--glass-shadow);
+}
+
+
+/* ---------- 3. מחוון ניווט נוזלי — כמוסה שגולשת אנכית ברייל ----------
+   הרייל אנכי, ולכן המחוון גולש ב-Y ולא ב-X כמו ב-CBA. סדר השכבות חשוב:
+   פריטים לא-פעילים (1), המחוון מעליהם (2) כדי שיטשטש אותם בדרך, והפריט
+   הפעיל מעל הכול (3) כדי שהתווית שלו תיקרא בבירור ברגע שהמחוון נחת עליו. */
+.sidebar-nav { position: relative; }
+
+.nav-indicator {
+  position: absolute;
+  right: 8px; left: 8px;
+  top: 0; height: 0;
+  border-radius: var(--r-xs);
+  background: var(--glass-dark-bg);
+  backdrop-filter: saturate(160%) blur(8px);
+  -webkit-backdrop-filter: saturate(160%) blur(8px);
+  box-shadow: inset 0 1px 0 var(--glass-dark-spec);
+  transition: transform var(--t-glide), height var(--t-glide), opacity .25s ease;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+}
+.nav-item          { position: relative; z-index: 1; }
+.nav-item.active   { z-index: 3; }
+
+/* כשהמחוון קיים — הוא נותן את הרקע לפריט הפעיל, והרקע הסטטי יורד */
+.sidebar-nav:has(.nav-indicator) .nav-item.active { background: none; }
+
+/* הפס הצדדי והאייקון של הפריט הפעיל מקבלים את גוון העולם.
+   הצהוב הניאון נשאר טוקן אחד בלבד: "דורש את תשומת לבך" — לא "פעיל". */
+.nav-item.active::after   { background: var(--dom-lite); }
+.nav-item.active .nav-icon { color: var(--dom-lite); }
+
+/* אותו כלל בבר התחתון — גם הפס העליון, שהיה צהוב ניאון */
+.bn-item.active           { color: var(--dom); }
+.bn-item.active::before   { background: var(--dom); }
+
+
+/* ---------- 4. מיקרו-אינטראקציות ----------
+   משוב לחיצה רך. תנועה מהירה מדי היא מה שגורם לממשק להרגיש זול. */
+.icon-btn, .topbar-curr-btn, .nav-item, .bn-item,
+.filter-btn, .date-filter-btn, .db-link, .pf-modal-close,
+.sidebar-toggle {
+  transition: transform var(--t-press), background var(--transition),
+              color var(--transition), border-color var(--transition),
+              box-shadow var(--transition);
+}
+.icon-btn:active, .topbar-curr-btn:active, .nav-item:active, .bn-item:active,
+.filter-btn:active, .date-filter-btn:active, .db-link:active,
+.pf-modal-close:active, .sidebar-toggle:active { transform: scale(.94); }
+
+/* סגירה שמסתובבת — הפעולה מרגישה כמו כפתור שמגיב, לא רק שינוי צבע */
+.pf-modal-close { transition: transform .18s cubic-bezier(.34,1.4,.56,1), background var(--transition); }
+.pf-modal-close:hover { transform: rotate(90deg); }
+
+
+/* ---------- 5. בהק ספקולרי עוקב-סמן ----------
+   הזוהר נע עם העכבר ונותן לכרטיס תחושה של משטח מלוטש. js/ui/motion.js כותב
+   את --mx/--my. בלי ה-JS פשוט לא קורה כלום. */
+.db-link, .stat-card, .pf-macro-card { position: relative; overflow: hidden; }
+.db-link::after, .stat-card::after, .pf-macro-card::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  opacity: 0; transition: opacity .25s ease;
+  background: radial-gradient(160px circle at var(--mx,50%) var(--my,50%),
+              rgba(16,24,40,.055), transparent 62%);
+}
+.db-link:hover::after, .stat-card:hover::after, .pf-macro-card:hover::after { opacity: 1; }
+
+/* קו גוון דק על הכרטיס הראשי של המסך — הגוון מופיע רק איפה שהוא אומר משהו */
+.pf-macro-card:first-child { box-shadow: inset 0 2px 0 var(--dom); }
+
+
+/* ---------- 6. נפילה חיננית ----------
+   שלושה מצבים שבהם הזכוכית יורדת ומשאירה ממשק שלם: דפדפן בלי תמיכה,
+   משתמש שביקש פחות שקיפות, ומשתמש שביקש ניגודיות גבוהה. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  #bottom-nav, .pf-modal, .col-filter-popup, .ret-tip, .error-tooltip {
+    background: var(--bg-surface);
+  }
+  .nav-indicator { background: rgba(255,255,255,.16); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  #bottom-nav, .pf-modal, .col-filter-popup, .ret-tip, .error-tooltip {
+    background: var(--bg-surface);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .nav-indicator { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(255,255,255,.18); }
+}
+
+@media (prefers-contrast: more) {
+  #bottom-nav, .pf-modal, .col-filter-popup, .ret-tip, .error-tooltip {
+    background: var(--bg-surface); border-color: var(--text-secondary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-indicator { transition: none !important; }
+  .icon-btn, .topbar-curr-btn, .nav-item, .bn-item, .filter-btn,
+  .date-filter-btn, .db-link, .pf-modal-close, .sidebar-toggle {
+    transition: background var(--transition), color var(--transition),
+                border-color var(--transition) !important;
+  }
+  .icon-btn:active, .topbar-curr-btn:active, .nav-item:active, .bn-item:active,
+  .filter-btn:active, .date-filter-btn:active, .db-link:active,
+  .pf-modal-close:active, .sidebar-toggle:active,
+  .pf-modal-close:hover { transform: none !important; }
+  .db-link::after, .stat-card::after, .pf-macro-card::after { display: none !important; }
+}

@@ -11,12 +11,15 @@
 
   <!-- Styles —  ?v= is a cache-buster: bump APP_VER on every deploy so the
        browser / GitHub Pages CDN always fetch the latest CSS & JS. -->
-  <link rel="stylesheet" href="css/variables.css?v=11" />
-  <link rel="stylesheet" href="css/layout.css?v=11" />
-  <link rel="stylesheet" href="css/components.css?v=11" />
-  <link rel="stylesheet" href="css/journal.css?v=11" />
-  <link rel="stylesheet" href="css/portfolio.css?v=11" />
-  <link rel="stylesheet" href="css/pages.css?v=11" />
+  <link rel="stylesheet" href="css/variables.css?v=12" />
+  <link rel="stylesheet" href="css/tokens.css?v=12" />
+  <link rel="stylesheet" href="css/layout.css?v=12" />
+  <link rel="stylesheet" href="css/components.css?v=12" />
+  <link rel="stylesheet" href="css/journal.css?v=12" />
+  <link rel="stylesheet" href="css/portfolio.css?v=12" />
+  <link rel="stylesheet" href="css/pages.css?v=12" />
+  <!-- זכוכית ותנועה (iOS 27) — שכבה תוספתית, נטענת אחרונה -->
+  <link rel="stylesheet" href="css/glass.css?v=12" />
 </head>
 <body>
 
@@ -43,21 +46,24 @@
 <nav id="bottom-nav"></nav>
 
 <!-- 1. Modules (utilities, data, logic) -->
-<script src="js/modules/navigation.js?v=11"></script>
-<script src="js/modules/dataService.js?v=11"></script>
-<script src="js/modules/classifier.js?v=11"></script>
-<script src="js/modules/portfolioEngine.js?v=11"></script>
-<script src="js/modules/analytics.js?v=11"></script>
+<script src="js/modules/navigation.js?v=12"></script>
+<script src="js/modules/dataService.js?v=12"></script>
+<script src="js/modules/classifier.js?v=12"></script>
+<script src="js/modules/portfolioEngine.js?v=12"></script>
+<script src="js/modules/analytics.js?v=12"></script>
 
 <!-- 2. App shell — defines Pages={} and App before any page registers itself -->
-<script src="js/app.js?v=11"></script>
+<script src="js/app.js?v=12"></script>
 
 <!-- 3. Pages — each file registers itself into Pages{} -->
-<script src="js/components/dashboard.js?v=11"></script>
-<script src="js/components/journal.js?v=11"></script>
-<script src="js/components/portfolio.js?v=11"></script>
-<script src="js/components/cashflow.js?v=11"></script>
-<script src="js/components/performance.js?v=11"></script>
+<script src="js/components/dashboard.js?v=12"></script>
+<script src="js/components/journal.js?v=12"></script>
+<script src="js/components/portfolio.js?v=12"></script>
+<script src="js/components/cashflow.js?v=12"></script>
+<script src="js/components/performance.js?v=12"></script>
+
+<!-- 4. שכבת תנועה — אפקטים בלבד, אחרי המסכים -->
+<script src="js/ui/motion.js?v=12"></script>
 
 </body>
 </html>
