@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# Claude Code — עותקי עבודה מקומיים והגדרות מקומיות, לא שייכים לריפו
+.claude/worktrees/
+.claude/settings.local.json

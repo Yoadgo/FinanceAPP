@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>אפיון FinanceAPP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&family=Frank+Ruhl+Libre:wght@500;700;900&family=Roboto+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --ink:#16202B; --ink2:#3D4C5C; --mut:#6E7F8F; --faint:#93A3B2;
+  --line:#DDE3E9; --line-soft:#EAEEF2;
+  --ground:#F3F6F8; --surface:#FFFFFF; --surface2:#EBEFF3;
+  --steel:#2D3748; --steel-soft:#5A6B7F;
+  --accent:#C2DE00; --accent-ink:#4C5A00; --accent-wash:#F4FACF;
+  --ok:#1B7F3B; --ok-wash:#E6F4EA;
+  --warn:#A96500; --warn-wash:#FCF3E3;
+  --bad:#B3201D; --bad-wash:#FBEAE9;
+  --shadow:0 1px 2px rgba(22,32,43,.05), 0 8px 24px -16px rgba(22,32,43,.28);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#E9EEF3; --ink2:#C3CDD7; --mut:#8B9CAC; --faint:#6E8194;
+    --line:#2B3644; --line-soft:#232D39;
+    --ground:#111821; --surface:#19212B; --surface2:#212B37;
+    --steel:#C3CDD7; --steel-soft:#8B9CAC;
+    --accent:#D9FF00; --accent-ink:#D9FF00; --accent-wash:#2A3213;
+    --ok:#5DD08A; --ok-wash:#152B1E;
+    --warn:#E3A94A; --warn-wash:#2E2412;
+    --bad:#F08078; --bad-wash:#33191A;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 28px -18px rgba(0,0,0,.8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#E9EEF3; --ink2:#C3CDD7; --mut:#8B9CAC; --faint:#6E8194;
+  --line:#2B3644; --line-soft:#232D39;
+  --ground:#111821; --surface:#19212B; --surface2:#212B37;
+  --steel:#C3CDD7; --steel-soft:#8B9CAC;
+  --accent:#D9FF00; --accent-ink:#D9FF00; --accent-wash:#2A3213;
+  --ok:#5DD08A; --ok-wash:#152B1E;
+  --warn:#E3A94A; --warn-wash:#2E2412;
+  --bad:#F08078; --bad-wash:#33191A;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 28px -18px rgba(0,0,0,.8);
+  color-scheme: dark;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink2);
+  font-family:'Assistant', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size:16.5px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+.doc{max-width:1200px; margin:0 auto; padding:0 20px 96px}
+.shell{display:grid; grid-template-columns:1fr; gap:28px}
+@media(min-width:1000px){
+  .shell{grid-template-columns:212px minmax(0,1fr); align-items:start; gap:44px}
+}
+
+.mast{padding:56px 0 30px; border-bottom:2px solid var(--ink); margin-bottom:34px}
+.mast .kicker{
+  font-family:'Roboto Mono',ui-monospace,monospace; font-size:11.5px; font-weight:500;
+  letter-spacing:.16em; color:var(--mut); text-transform:uppercase; direction:ltr; display:inline-block;
+}
+.mast h1{
+  font-family:'Frank Ruhl Libre', Georgia, serif; font-weight:900;
+  font-size:clamp(34px,6vw,54px); line-height:1.08; color:var(--ink);
+  margin:12px 0 10px; text-wrap:balance; letter-spacing:-.01em;
+}
+.mast .sub{font-size:19px; color:var(--ink2); max-width:64ch; margin:0}
+.mast .facts{display:flex; flex-wrap:wrap; gap:7px; margin-top:22px}
+.fact{
+  font-size:12.5px; font-weight:600; padding:5px 11px; border-radius:5px;
+  background:var(--surface2); color:var(--ink2); border:1px solid var(--line-soft);
+}
+.fact.hl{background:var(--accent-wash); color:var(--accent-ink); border-color:transparent}
+.fact.ok{background:var(--ok-wash); color:var(--ok); border-color:transparent}
+
+nav.toc{position:sticky; top:20px; font-size:14px; display:none}
+@media(min-width:1000px){nav.toc{display:block}}
+nav.toc .t{
+  font-family:'Roboto Mono',monospace; font-size:10.5px; letter-spacing:.15em;
+  color:var(--faint); text-transform:uppercase; margin-bottom:12px; direction:ltr; text-align:right;
+}
+nav.toc ol{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px}
+nav.toc a{
+  display:flex; gap:9px; padding:5px 9px; color:var(--mut); text-decoration:none;
+  border-radius:5px; line-height:1.35; border-inline-start:2px solid transparent;
+}
+nav.toc a span{font-family:'Roboto Mono',monospace; font-size:11px; opacity:.6; padding-top:2px}
+nav.toc a:hover{color:var(--ink); background:var(--surface)}
+nav.toc a.on{color:var(--ink); font-weight:700; border-inline-start-color:var(--accent); background:var(--surface)}
+
+section{margin-bottom:52px; scroll-margin-top:24px}
+h2{
+  font-family:'Frank Ruhl Libre',Georgia,serif; font-weight:700; color:var(--ink);
+  font-size:clamp(25px,3.4vw,32px); line-height:1.25; margin:0 0 6px;
+  display:flex; align-items:baseline; gap:13px; text-wrap:balance;
+}
+h2 .num{
+  font-family:'Roboto Mono',monospace; font-size:13px; font-weight:500;
+  color:var(--faint); flex:none; padding-top:4px; direction:ltr;
+}
+h3{font-family:'Assistant',sans-serif; font-weight:700; color:var(--ink); font-size:18.5px; margin:30px 0 8px; line-height:1.4}
+h4{font-size:15.5px; font-weight:700; color:var(--ink); margin:20px 0 4px}
+.lead{color:var(--mut); font-size:17px; margin:0 0 22px; max-width:70ch}
+p{margin:0 0 14px; max-width:74ch}
+ul,ol{margin:10px 0 16px; padding-inline-start:20px; max-width:74ch}
+li{margin:6px 0}
+li::marker{color:var(--faint)}
+strong{color:var(--ink); font-weight:700}
+a{color:var(--ink); text-decoration-color:var(--accent); text-underline-offset:3px}
+code{
+  font-family:'Roboto Mono',ui-monospace,monospace; font-size:13px; direction:ltr;
+  display:inline-block; background:var(--surface2); padding:1px 6px; border-radius:4px; color:var(--ink);
+}
+hr{border:0; border-top:1px solid var(--line); margin:34px 0}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
+
+.call{
+  border-inline-start:3px solid var(--steel-soft); background:var(--surface);
+  padding:14px 18px; border-radius:0 9px 9px 0; margin:18px 0; font-size:15.5px;
+}
+.call > :last-child{margin-bottom:0}
+.call.bad{border-inline-start-color:var(--bad); background:var(--bad-wash)}
+.call.warn{border-inline-start-color:var(--warn); background:var(--warn-wash)}
+.call.ok{border-inline-start-color:var(--ok); background:var(--ok-wash)}
+.call .h{display:block; font-weight:700; color:var(--ink); margin-bottom:3px}
+
+.dec{border:1px dashed var(--faint); border-radius:11px; padding:16px 20px; margin:16px 0; background:var(--surface)}
+.dec .q{font-weight:700; color:var(--ink); font-size:16.5px; margin-bottom:8px}
+.dec ul{margin:6px 0 10px}
+.dec .rec{font-size:14.5px; background:var(--accent-wash); color:var(--accent-ink); padding:8px 12px; border-radius:7px; font-weight:600}
+
+.pill{display:inline-block; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:100px; white-space:nowrap; line-height:1.7}
+.pill.have{background:var(--ok-wash); color:var(--ok)}
+.pill.part{background:var(--warn-wash); color:var(--warn)}
+.pill.none{background:var(--bad-wash); color:var(--bad)}
+.pill.new{background:var(--accent-wash); color:var(--accent-ink)}
+
+.tw{overflow-x:auto; margin:18px 0; border:1px solid var(--line); border-radius:11px; background:var(--surface)}
+table{width:100%; border-collapse:collapse; font-size:15px; min-width:560px}
+th,td{text-align:right; padding:11px 15px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+thead th{background:var(--surface2); font-size:12.5px; font-weight:700; color:var(--ink); letter-spacing:.02em; border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:0}
+td.n{font-family:'Roboto Mono',monospace; font-variant-numeric:tabular-nums; direction:ltr; text-align:right}
+
+.finds{display:flex; flex-direction:column; gap:0; margin:20px 0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface)}
+.find{display:grid; grid-template-columns:34px 1fr; gap:14px; padding:16px 20px; border-bottom:1px solid var(--line-soft)}
+.find:last-child{border-bottom:0}
+.find .fn{font-family:'Roboto Mono','Assistant',monospace;font-weight:700; font-size:12px; font-weight:700; color:var(--faint); padding-top:3px; direction:ltr; text-align:center}
+.find .ft{font-weight:700; color:var(--ink); font-size:16.5px; margin-bottom:2px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+.find p{margin:0; font-size:15.5px; max-width:none}
+.find.sev .fn{color:var(--bad)}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin:18px 0}
+.grid.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:620px){.grid.g2{grid-template-columns:1fr}}
+.tile{background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:15px 17px}
+.tile h4{margin:0 0 4px; font-size:15px}
+.tile p{margin:0; font-size:14.5px; color:var(--mut); max-width:none}
+
+.phase{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin:12px 0; display:grid; gap:4px}
+.phase.now{border-color:var(--accent); box-shadow:var(--shadow)}
+.phase .ph{display:flex; align-items:baseline; gap:11px; flex-wrap:wrap; margin-bottom:4px}
+.phase .pn{font-family:'Roboto Mono',monospace; font-size:11.5px; font-weight:700; background:var(--steel); color:var(--ground); padding:2px 8px; border-radius:5px; direction:ltr}
+.phase .pt{font-weight:700; color:var(--ink); font-size:18px}
+.phase .pw{font-size:13px; color:var(--faint); font-family:'Roboto Mono',monospace; direction:ltr}
+.phase ul{margin:4px 0 0}
+.phase .out{font-size:14.5px; color:var(--mut); border-top:1px dashed var(--line); padding-top:9px; margin-top:9px}
+.phase .out b{color:var(--ink)}
+
+/* domain colour swatches */
+.sw{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:10px; margin:18px 0}
+.swi{border:1px solid var(--line); border-radius:11px; overflow:hidden; background:var(--surface)}
+.swi .chip{height:44px; display:block}
+.swi .lbl{padding:9px 13px; font-size:14px; font-weight:700; color:var(--ink)}
+.swi .hex{padding:0 13px 10px; font-family:'Roboto Mono',monospace; font-size:11.5px; color:var(--faint); direction:ltr; text-align:right}
+
+figure{margin:22px 0}
+figure svg{display:block; width:100%; height:auto; max-width:760px}
+figcaption{font-size:13.5px; color:var(--faint); margin-top:8px}
+.dwrap{overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:20px}
+
+
+/* radius scale demo */
+.radii{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:18px 0}
+.rd{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;text-align:center}
+.rd .rbox{width:100%;height:52px;background:var(--steel);opacity:.9;margin-bottom:9px}
+.rd b{display:block;font-family:'Roboto Mono',monospace;font-size:13px;color:var(--ink);direction:ltr}
+.rd span{display:block;font-size:12px;color:var(--mut);line-height:1.4;margin-top:2px}
+
+/* liquid glass comparison */
+.glassdemo{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:18px;
+  padding:26px 22px;border-radius:20px;margin:18px 0;
+  background:
+    radial-gradient(120% 130% at 12% 15%, #4F46E5 0%, transparent 55%),
+    radial-gradient(110% 120% at 88% 20%, #DB2777 0%, transparent 52%),
+    radial-gradient(130% 140% at 50% 100%, #0891B2 0%, transparent 60%),
+    linear-gradient(140deg,#1E1B4B,#0F172A);
+}
+.gd-panel{
+  border-radius:18px;padding:16px 18px;
+  background:rgba(255,255,255,.30);
+  backdrop-filter:saturate(180%) blur(18px);
+  -webkit-backdrop-filter:saturate(180%) blur(18px);
+  color:#fff;
+}
+.gd-27{
+  border:1px solid rgba(8,12,20,.45);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(255,255,255,.18), 0 10px 30px -12px rgba(0,0,0,.6);
+}
+.gd-26{ border:1px solid rgba(255,255,255,.30); box-shadow:inset 0 1px 0 rgba(255,255,255,.5); }
+.gd-tag{font-size:11.5px;font-weight:700;letter-spacing:.04em;opacity:.9;margin-bottom:8px}
+.gd-val{font-family:'Roboto Mono',monospace;font-size:26px;font-weight:700;line-height:1.1;direction:ltr;text-align:right}
+.gd-sub{font-size:12.5px;opacity:.85;margin-top:4px}
+@supports not (backdrop-filter: blur(1px)){ .gd-panel{background:rgba(30,27,75,.86)} }
+@media (prefers-reduced-transparency: reduce){ .gd-panel{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(30,27,75,.88)} }
+
+footer{border-top:1px solid var(--line); padding-top:20px; margin-top:20px; font-size:14px; color:var(--faint)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<div class="doc" dir="rtl" lang="he">
+
+<header class="mast">
+  <div class="kicker">FinanceAPP · SPEC v3.1</div>
+  <h1>מניהול תיקים למרכז בקרה פיננסי</h1>
+  <p class="sub">אפיון מלא של מה שהאפליקציה צריכה להיות — פונקציונליות, תחקור הוצאות, קליטת נתונים, שפת עיצוב בסגנון iOS&nbsp;27, שכבת AI ותוכנית פיתוח מדורגת. נשען על קריאה של הקוד החי, בדיקה של האפליקציה בפועל, והשוואה מול CBA — אפליקציית ניהול הקהילה.</p>
+  <div class="facts">
+    <span class="fact">2 בספטמבר 2026</span>
+    <span class="fact">ענף <code>main</code></span>
+    <span class="fact">קומיט <code>2f5c026</code></span>
+    <span class="fact">גיליון <code>StocksData</code> נקרא ישירות</span>
+    <span class="fact ok">כל ההחלטות סגורות</span>
+    <span class="fact hl">מוכן להפוך לקוד</span>
+  </div>
+</header>
+
+<div class="shell">
+
+<nav class="toc" aria-label="תוכן העניינים">
+  <div class="t">תוכן</div>
+  <ol>
+    <li><a href="#s1"><span>01</span>מה בנוי היום</a></li>
+    <li><a href="#s2"><span>02</span>הפערים</a></li>
+    <li><a href="#s3"><span>03</span>מה CBA מלמדת</a></li>
+    <li><a href="#s4"><span>04</span>מודל הנתונים</a></li>
+    <li><a href="#s5"><span>05</span>מנוע התחקור</a></li>
+    <li><a href="#s6"><span>06</span>הוצאות ואשראי</a></li>
+    <li><a href="#s7"><span>07</span>קליטת נתונים</a></li>
+    <li><a href="#s8"><span>08</span>לקחים מאפליקציות תקציב</a></li>
+    <li><a href="#s9"><span>09</span>התחייבויות וצבירה</a></li>
+    <li><a href="#s10"><span>10</span>UX ו-UI</a></li>
+    <li><a href="#s11"><span>11</span>שפת העיצוב</a></li>
+    <li><a href="#s12"><span>12</span>שכבת AI</a></li>
+    <li><a href="#s13"><span>13</span>החלטות</a></li>
+    <li><a href="#s14"><span>14</span>תוכנית פיתוח</a></li>
+    <li><a href="#s15"><span>15</span>מה לא נעשה</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ══════════ 1 ══════════ -->
+<section id="s1">
+  <h2><span class="num">01</span>מה בנוי היום</h2>
+  <p class="lead">התמונה האמיתית מהקוד, לא מהזיכרון. האפליקציה עובדת, והמנוע שבבסיסה טוב בהרבה ממה שהממשק מראה.</p>
+
+  <h3>הארכיטקטורה</h3>
+  <p><code>index.html</code> טוען שכבות בסדר קשיח: חמישה מודולים (ניווט, נתונים, סיווג, מנוע תיקים, אנליטיקה), אחריהם <code>app.js</code> שמגדיר את מרשם הדפים <code>Pages{}</code>, ואחריהם חמישה דפים שכל אחד רושם את עצמו למרשם. אין שלב בנייה, אין ספריות חיצוניות, ואין תלות שדורשת התקנה — בדיוק כפי שהוגדר. עקיפת המטמון נעשית ידנית עם <code>?v=10</code> על כל קובץ.</p>
+
+  <div class="grid g2">
+    <div class="tile"><h4>DataService</h4><p>שלוש שכבות מטמון: זיכרון (5 דק'), localStorage (30 דק'), ורק אז רשת. רענון רקע שקט כשהמטמון מתיישן.</p></div>
+    <div class="tile"><h4>Classifier v3</h4><p>ממפה 13 סוגי תנועה של IBI לחמש קטגוריות־על. מזהה פיצולים, המרות מט"ח, מגן מס וריבית חובה — כולל מקרי הקצה שנתפסו בביקורת נתונים.</p></div>
+    <div class="tile"><h4>PortfolioEngine</h4><p>ספר FIFO מפתוח לפי <code>(תיק, סימבול)</code>, פיצולים נגזרים משורות ההטבה של הברוקר, עסקאות סגורות ועקומת הון היסטורית.</p></div>
+    <div class="tile"><h4>Analytics</h4><p>אגרגציית תזרים ומיסים בדולר, עם המרת שורות שקליות לפי שער.</p></div>
+  </div>
+
+  <div class="call ok">
+    <span class="h">מה שכבר טוב מאוד ואסור לגעת בו</span>
+    מנוע ה-FIFO. ההערות בקוד מתעדות שלוש מלכודות אמיתיות שנפלת בהן ותוקנו — מפתוח לפי סימבול בלבד שערבב תיקים, ספירה כפולה של פיצולים שניפחה את TSLA, ופוזיציות רפאים ממכירה שקדמה לקנייה באותו יום. זה החלק היקר ביותר בפרויקט, והוא נכון.
+  </div>
+
+  <h3>הגיליון בפועל</h3>
+  <p>הגיליון נקרא <code>StocksData</code>, וה-Apps Script שמשרת אותו הוא פרויקט אחד בשם "בניית גליון היסטוריה למניה" — קובץ יחיד, 679 שורות. הוא בנוי טוב יותר ממה שציפיתי: אובייקט <code>CFG</code> מרוכז בראש הקובץ, זיהוי כותרות סובלני שמקבל עברית ואנגלית כאחד, טריגר יומי להיסטוריה וטריגר של חמש דקות למחירים חיים.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:22%">טאב</th><th style="width:36%">עמודות</th><th>מה זה אומר לאפיון</th></tr></thead>
+      <tbody>
+        <tr><td><code>Transactions</code></td><td>Date · Type · Name · Symbol · Qty · ExecutionRate · Currency · <b>Commission</b> · <b>Fees</b> · TotalFX · TotalILS · CashBalanceILS · EstimatedTax · Portfolio</td><td>1,326 שורות. שתי העמודות המודגשות קיימות ואף אחד לא קורא אותן — ר' ממצא 05.</td></tr>
+        <tr><td><code>Protfolios</code></td><td>Portfolio · Type</td><td>ישות "חשבונות" כבר קיימת בעובר. צריך להרחיב עמודות ולתקן את שם הטאב — הוא כתוב בשגיאה.</td></tr>
+        <tr><td><code>USD_ILS</code></td><td>TODAY · USD-ILS</td><td>שורה אחת בלבד — השער של היום. הטאב קיים; צריך להפוך אותו לטבלה היסטורית, לא ליצור חדש.</td></tr>
+        <tr><td><code>RealTimeData</code></td><td>Symbol · GoogleSymbol · Price · ChangePct · UpdatedAt</td><td>נבנה אוטומטית מהסימבולים שנסחרו.</td></tr>
+        <tr><td><code>Log</code></td><td>Timestamp · RunId · Function · Event · Status · Details</td><td><b>יומן ריצה מובנה שכבר עובד.</b> זה בדיוק הבסיס למסך "קליטות אחרונות" שסעיף 07 מבקש — חצי מהעבודה כבר עשויה.</td></tr>
+        <tr><td><code>H_&lt;טיקר&gt;</code> × 25</td><td>Symbol · StartDate, ואז Date · Close · Volume</td><td>טאב נפרד לכל נייר, נוצר אוטומטית. ר' ממצא 04 — זה המבנה שמאט את הטעינה.</td></tr>
+        <tr><td><code>Symbols</code></td><td>—</td><td>מוגדר ב-<code>CFG</code> כטאב אופציונלי אבל <b>לא קיים</b>. זה הבית השמור לישות "ניירות".</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>מה קיים בממשק</h3>
+  <p>חמישה דפים חיים — לוח בקרה, תיקי השקעות, ביצועים, יומן תנועות, הכנסות והוצאות. שני פריטים בתפריט מובילים לדף ריק: <strong>חסכונות</strong> ו<strong>הגדרות</strong>. בבדיקה החיה: 1,336 תנועות, 2 תיקים, 9 פוזיציות פתוחות, 112 עסקאות סגורות. הכול נקרא מגיליון אחד דרך Apps Script, שיושב <strong>בחשבון הגוגל הפרטי שלך</strong> — נפרד מהחשבון שמריץ את CBA. נקודות הקצה שקיימות: <code>transactions</code>, <code>realtime</code>, <code>history</code>, <code>usd_ils</code>, <code>health</code>.</p>
+</section>
+
+<!-- ══════════ 2 ══════════ -->
+<section id="s2">
+  <h2><span class="num">02</span>הפערים</h2>
+  <p class="lead">ארבעה־עשר ממצאים מסודרים לפי דחיפות. הראשונים שלושה חוסמים כל דבר אחר.</p>
+
+  <div class="finds">
+    <div class="find sev">
+      <div class="fn">01</div>
+      <div>
+        <div class="ft">הנתונים הפיננסיים שלך פתוחים לכל אחד <span class="pill none">מאומת</span></div>
+        <p>זה כבר לא חשד. פתחתי את הפריסה וראיתי: <strong>"למי יש גישה: כולם"</strong>, ו<strong>"לבצע בתור: עצמי"</strong>. סריקת הקוד מאשרת שאין שום שכבת הגנה — לא <code>PropertiesService</code>, לא בדיקת משתמש, לא אסימון ולא סוד. הפונקציה <code>doGet</code> קוראת פרמטר אחד בלבד. כלומר כל מי שמחזיק בכתובת ה-<code>/exec</code>, שיושבת בקוד גלוי בריפו ציבורי, מקבל את 1,326 התנועות שלך על שמות התיקים, יתרות המזומן ונתוני המס. <strong>ויש חמש פריסות פעילות של אותו סקריפט</strong> — לכן תיקון של כתובת אחת לא מספיק; צריך לארכב את כל מה שלא בשימוש.</p>
+      </div>
+    </div>
+    <div class="find sev">
+      <div class="fn">02</div>
+      <div>
+        <div class="ft">האפליקציה יודעת רק לקרוא <span class="pill none">חוסם</span></div>
+        <p>אין <code>doPost</code>, אין כתיבה, אין טופס. כל תנועה חייבת להיכנס ידנית לגיליון. זו החומה שחוסמת הוצאות, הלוואות, חסכונות ויומן מחקר — כולם דורשים הזנה מהאפליקציה. <strong>אושר לתיקון בשלב 2.</strong></p>
+      </div>
+    </div>
+    <div class="find sev">
+      <div class="fn">03</div>
+      <div>
+        <div class="ft">קוד השרת לא נמצא בשום מקום מחוץ לגוגל <span class="pill none">סיכון</span></div>
+        <p>ב-CBA יש <code>apps-script/Code.gs</code> — 6,839 שורות תחת ניהול גרסאות. ב-FinanceAPP ה-Apps Script חי רק בתוך העורך של גוגל. אם הוא יימחק או ישתנה בטעות אין ממה לשחזר, ואי אפשר לתחקר מה השתנה ומתי.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">04</div>
+      <div>
+        <div class="ft">טאב נפרד לכל נייר — מבנה שלא מחזיק מעמד</div>
+        <p>היסטוריית המחירים שמורה בטאב לכל טיקר: <code>H_TSLA</code>, <code>H_NVDA</code> וכן הלאה — 25 טאבים היום מתוך 32 בגיליון כולו. כל נייר חדש מוסיף טאב, וכל בקשת היסטוריה היא קריאה נפרדת. זו הסיבה השורשית לטעינה האיטית (ממצא 06), וזה גם מה שיישבר כשייכנסו קרנות, פיקדונות ונכסים. <strong>הכיוון:</strong> טאב <code>History</code> אחד מפתוח לפי (סימבול, תאריך), או לכל הפחות שליפה מרוכזת אחת במקום עשרים.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">05</div>
+      <div>
+        <div class="ft">עמודות עמלות קיימות בגיליון ואף אחד לא קורא אותן</div>
+        <p>ב-<code>Transactions</code> יש עמודות <code>Commission</code> ו-<code>Fees</code> מלאות. ה-<code>Classifier</code> מגדיר תווית <code>TRADE_COMMISSION</code> — אבל שום כלל לא מייצר אותה, ו-<code>PortfolioEngine</code> מוציא עמלות מבסיס העלות במכוון. כלומר "עלות החיכוך" בסעיף 05 מחושבת היום בחסר, והתיקון כמעט חינם: לסכום שתי עמודות שכבר יושבות שם.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">06</div>
+      <div>
+        <div class="ft">טעינה ראשונה ארוכה מ-10 שניות</div>
+        <p>נמדד בבדיקה החיה: אחרי 6 שניות המסך עדיין הציג "טוען", ואחרי 16 הוא היה מצויר. הדשבורד מושך היסטוריית מחירים לכל טיקר שנסחר אי־פעם, בזה אחר זה, לפני שהוא מצייר משהו. ב-CBA יש עשרה סוגי שלד טעינה שמציירים מיד את <em>צורת</em> התוכן.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">07</div>
+      <div>
+        <div class="ft">אין שכבת רכיבים</div>
+        <p>אין Modal, Drawer, Toast, Dialog, Empty State או Skeleton משותפים. כל דף מייצר HTML משלו מאפס. שיטת העבודה שלך אומרת "להשתמש ברכיבים הקיימים לפני שממציאים חדשים" — כאן פשוט אין במה להשתמש.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">08</div>
+      <div>
+        <div class="ft">אין מצבי קצה</div>
+        <p>ריק, טוען, נכשל — שלושת המצבים שנופלים תמיד. אין מסך ריק מנוסח, ואם הגיליון לא זמין נשארת נקודה אדומה עם tooltip ומסך לבן. אין ניסיון חוזר ואין הסבר מה לעשות.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">09</div>
+      <div>
+        <div class="ft">אי אפשר לצלול ממספר לתנועה שיצרה אותו</div>
+        <p>"רווח לא ממומש" בדשבורד הוא מספר סופי. אי אפשר ללחוץ עליו ולראות מאילו פוזיציות הוא מורכב, ומהן לאילו קניות. זה הפער שהכי מפריע לתחקור — וגם הכי זול לסגור, כי כל הנתונים כבר בזיכרון.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">10</div>
+      <div>
+        <div class="ft">היסטוריה שקלית מומרת בשער של היום</div>
+        <p>מתג המטבע גלובלי, אבל שער החליפין הוא נקודתי. בגרף ההתפתחות, הפקדה שקלית מ-2023 מומרת לדולר לפי השער של היום. בתצוגה שקלית זה אומר שגרף "הון מושקע מול שווי התיק" מראה היסטוריה שלא הייתה.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">11</div>
+      <div>
+        <div class="ft">מסך "חסכונות" ריק, ו"הגדרות" מיותר</div>
+        <p>שניהם מוצגים בניווט ומחזירים "הדף הזה עדיין בבנייה". <strong>הוכרע:</strong> חסכונות נשאר ומקבל תוכן (סעיף 07); הגדרות יורד מהתפריט — ההגדרות ממילא עוברות לגיליון.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">12</div>
+      <div>
+        <div class="ft">אין PWA</div>
+        <p>אין manifest, אין service worker, אין אייקון למסך הבית. האפליקציה עובדת בנייד רק כאתר בדפדפן. ב-CBA הצעד הזה כבר נעשה ומתועד במסמך אפיון שלם.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">13</div>
+      <div>
+        <div class="ft">אין תיעוד פרויקט</div>
+        <p>אין README, אין CLAUDE.md. ההערות <em>בתוך</em> הקוד מצוינות ומסבירות למה הקוד כתוב כך — אבל אין מקום שמסביר למה המוצר בנוי כך, מה נשקל ונדחה, ומה מחובר למה.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">14</div>
+      <div>
+        <div class="ft">ארבעה ענפים ננטשו וחמישה worktrees נשארו על הדיסק</div>
+        <p><code>claude/agitated-napier</code>, <code>claude/objective-hopper</code>, <code>claude/pedantic-ishizaka</code>, <code>claude/stoic-wing</code> — עם עותקים מלאים של הפרויקט בתוך <code>.claude/worktrees</code>. חלקם מכילים גרסאות ישנות של אותם קבצים, וזה בדיוק המקום שבו מתחילים לערוך בטעות את הקובץ הלא נכון.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 3 ══════════ -->
+<section id="s3">
+  <h2><span class="num">03</span>מה CBA מלמדת</h2>
+  <p class="lead">CBA היא אותו סטאק בדיוק — HTML/CSS/JS טהורים, Google Sheets, Apps Script, אפס עלות — אבל בשלה בסדר גודל. היא הראיה שהמגבלות שלך אינן המגבלה.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:26%">היבט</th><th style="width:23%">CBA</th><th style="width:21%">FinanceAPP</th><th>מה לאמץ</th></tr></thead>
+      <tbody>
+        <tr><td><strong>קוד שרת בריפו</strong></td><td><span class="pill have">6,839 שורות</span></td><td><span class="pill none">אין</span></td><td>להעלות את ה-Apps Script לתיקיית <code>apps-script/</code></td></tr>
+        <tr><td><strong>אימות</strong></td><td><span class="pill have">Google + מושב חתום</span></td><td><span class="pill none">אין</span></td><td>אותו מנגנון בדיוק, משתמש יחיד</td></tr>
+        <tr><td><strong>כתיבה</strong></td><td><span class="pill have">doPost + תור אופליין</span></td><td><span class="pill none">קריאה בלבד</span></td><td>תור כתיבות עם ניסיון חוזר ו-flush ביציאה</td></tr>
+        <tr><td><strong>שכבת רכיבים</strong></td><td><span class="pill have">CBA.ui + CBA.skel</span></td><td><span class="pill none">אין</span></td><td>לפרק את הקיים לרכיבים משותפים</td></tr>
+        <tr><td><strong>שלדי טעינה</strong></td><td><span class="pill have">10 צורות</span></td><td><span class="pill none">טקסט בלבד</span></td><td>שלד לכל מסך, בצורת התוכן</td></tr>
+        <tr><td><strong>מצב ריק</strong></td><td><span class="pill have">רכיב כלל־מערכתי</span></td><td><span class="pill none">אין</span></td><td>אותו רכיב</td></tr>
+        <tr><td><strong>זכוכית נוזלית ותנועה</strong></td><td><span class="pill have">motion.css מלא</span></td><td><span class="pill none">אין</span></td><td>הסבה מלאה — סעיף 11</td></tr>
+        <tr><td><strong>חיפוש גלובלי</strong></td><td><span class="pill have">מסכים + נתונים</span></td><td><span class="pill none">אין</span></td><td>חיפוש על טיקרים, תנועות, סוחרים, תזות</td></tr>
+        <tr><td><strong>PWA</strong></td><td><span class="pill have">manifest + SW</span></td><td><span class="pill none">אין</span></td><td>העתקה כמעט מלאה</td></tr>
+        <tr><td><strong>AI</strong></td><td><span class="pill have">Gemini לקבלות ומסמכים</span></td><td><span class="pill none">אין</span></td><td>אותה שכבה, לדוחות ברוקר ולפירוטי אשראי</td></tr>
+        <tr><td><strong>תוכן מהגיליון</strong></td><td><span class="pill have">סיור, מיילים, הגדרות</span></td><td><span class="pill none">הכול בקוד</span></td><td>כל טקסט, קטגוריה וסף שמשתנה — לגיליון</td></tr>
+        <tr><td><strong>תיעוד</strong></td><td><span class="pill have">README + 2 מסמכים</span></td><td><span class="pill none">אין</span></td><td>README + CLAUDE.md + המסמך הזה</td></tr>
+        <tr><td><strong>נתוני דמו כשאין חיבור</strong></td><td><span class="pill have">mock מסומן</span></td><td><span class="pill none">מסך ריק</span></td><td>לא להעתיק בעיוורון — ראה למטה</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call warn">
+    <span class="h">היוצא מן הכלל היחיד</span>
+    ב-CBA, כשהחיבור נופל האפליקציה נופלת לנתוני דמה ומסמנת זאת. באפליקציה פיננסית זה מסוכן: מספר שנראה כמו ההון שלך אבל אינו. הכלל שלך — "לעולם לא להציג נתוני Mock כאילו הם אמיתיים" — מחייב כאן מצב שגיאה מפורש, או נתונים מהמטמון עם חותמת "עדכני לתאריך X", ולעולם לא המצאה.
+  </div>
+
+  <div class="call">
+    <span class="h">שני חשבונות גוגל נפרדים</span>
+    ה-Apps Script של FinanceAPP יושב בחשבון הפרטי שלך, ושל CBA בחשבון אחר. משמעות מעשית: את <em>הקוד</em> אפשר להעתיק, את <em>הפריסה</em> ואת <em>מפתחות ה-API</em> לא. יידרש מפתח Gemini חדש תחת החשבון הפרטי, ב-Script Properties של הפרויקט הזה. גם תיקיית ה-Drive לקליטת הקבצים (סעיף 07) תהיה בדרייב הפרטי.
+  </div>
+
+  <h3>ארבעה לקחים שאינם פיצ'רים</h3>
+  <ol>
+    <li><strong>מקור אמת אחד.</strong> ב-CBA כל המסכים פונים רק ל-<code>CBA.data</code> ואף פעם לא ישירות למקור. לכן החלפת המקור מ-mock ל-Sheets לא נגעה באף מסך. ב-FinanceAPP הדפים כבר קוראים ל-<code>DataService</code>, אבל גם מפרשים את הנתונים בעצמם: פענוח מחירי הזמן־אמת ממומש פעמיים ובשתי גרסאות — <code>_buildRtMap</code> בדף התיקים ו-<code>_rtMap</code> בדשבורד. זה בדיוק השכפול שנשבר בשקט.</li>
+    <li><strong>מה שמשתנה — לגיליון, לא לקוד.</strong> הסיור, נוסחי המיילים והגדרות המכון ב-CBA יושבים בטאבים. הוספת צעד לסיור היא שורה בגיליון. באפליקציה הפיננסית זה נכון לקטגוריות הוצאה, לשמות סוחרים, לסיווגי סקטור ולכל סף התראה.</li>
+    <li><strong>הערה מתעדת החלטה, לא תחביר.</strong> ההערות ב-CBA כותבות מי ביקש, מתי, ומה היה הבאג. זה מה שהופך אותן לשוות תחזוקה. ההערות במנוע ה-FIFO שלך כבר כתובות ככה — צריך שזה יהיה הסטנדרט בכל קובץ.</li>
+    <li><strong>כתיבה שלא הולכת לאיבוד.</strong> CBA עוקבת אחרי מצב "מלוכלך", מחזיקה תור כתיבות ממתינות ב-localStorage, מנסה שוב, ומזהירה לפני יציאה. זה מה שהופך גיליון לדאטהבייס אמיתי.</li>
+  </ol>
+</section>
+
+<!-- ══════════ 4 ══════════ -->
+<section id="s4">
+  <h2><span class="num">04</span>מודל הנתונים</h2>
+  <p class="lead">היום יש ישות אחת מלאה — תנועה של ברוקר — ושלוש שקיימות בעובר או שמורות מראש בגיליון. כדי לתמוך בכל מה שהוגדר צריך שש־עשרה. זהו הלב של האפיון — כל השאר נגזר ממנו.</p>
+
+  <figure>
+    <div class="dwrap">
+      <svg viewBox="0 0 760 470" direction="ltr" role="img" aria-label="תרשים שכבות: גיליונות, שרת, שכבת נתונים, מנועים, מסכים">
+        <defs>
+          <style>
+            .lb{font-family:'Assistant',sans-serif;font-size:12px;fill:var(--ink2)}
+            .lt{font-family:'Assistant',sans-serif;font-size:12px;font-weight:700;fill:var(--ink)}
+            .ll{font-family:'Roboto Mono',monospace;font-size:9.5px;fill:var(--faint);letter-spacing:.1em;direction:ltr;unicode-bidi:isolate}
+            .bx{fill:var(--surface2);stroke:var(--line);stroke-width:1}
+            .bxn{fill:var(--accent-wash);stroke:var(--accent);stroke-width:1;stroke-dasharray:4 3}
+            .band{fill:none;stroke:var(--line);stroke-width:1}
+          </style>
+        </defs>
+
+        <rect x="8" y="8" width="744" height="78" rx="10" class="band"/>
+        <text x="740" y="26" class="ll" text-anchor="end">SCREENS</text>
+        <g>
+          <rect x="600" y="34" width="90" height="26" rx="6" class="bx"/><text x="645" y="51" class="lt" text-anchor="middle">לוח בקרה</text>
+          <rect x="504" y="34" width="90" height="26" rx="6" class="bx"/><text x="549" y="51" class="lt" text-anchor="middle">תיקים</text>
+          <rect x="408" y="34" width="90" height="26" rx="6" class="bx"/><text x="453" y="51" class="lt" text-anchor="middle">ביצועים</text>
+          <rect x="312" y="34" width="90" height="26" rx="6" class="bx"/><text x="357" y="51" class="lt" text-anchor="middle">יומן תנועות</text>
+          <rect x="216" y="34" width="90" height="26" rx="6" class="bxn"/><text x="261" y="51" class="lt" text-anchor="middle">יומן מחקר</text>
+          <rect x="120" y="34" width="90" height="26" rx="6" class="bxn"/><text x="165" y="51" class="lt" text-anchor="middle">הוצאות</text>
+          <rect x="24" y="34" width="90" height="26" rx="6" class="bxn"/><text x="69" y="51" class="lt" text-anchor="middle">חסכונות</text>
+        </g>
+
+        <rect x="8" y="98" width="744" height="78" rx="10" class="band"/>
+        <text x="740" y="116" class="ll" text-anchor="end">ENGINES</text>
+        <g>
+          <rect x="576" y="124" width="114" height="26" rx="6" class="bx"/><text x="633" y="141" class="lt" text-anchor="middle">PortfolioEngine</text>
+          <rect x="480" y="124" width="88" height="26" rx="6" class="bx"/><text x="524" y="141" class="lt" text-anchor="middle">Classifier</text>
+          <rect x="386" y="124" width="86" height="26" rx="6" class="bx"/><text x="429" y="141" class="lt" text-anchor="middle">Analytics</text>
+          <rect x="266" y="124" width="112" height="26" rx="6" class="bxn"/><text x="322" y="141" class="lt" text-anchor="middle">ResearchEngine</text>
+          <rect x="158" y="124" width="100" height="26" rx="6" class="bxn"/><text x="208" y="141" class="lt" text-anchor="middle">SpendEngine</text>
+          <rect x="24" y="124" width="126" height="26" rx="6" class="bxn"/><text x="87" y="141" class="lt" text-anchor="middle">NetWorthEngine</text>
+        </g>
+
+        <rect x="8" y="188" width="744" height="78" rx="10" class="band"/>
+        <text x="740" y="206" class="ll" text-anchor="end">DATA LAYER</text>
+        <rect x="392" y="214" width="298" height="30" rx="7" class="bx"/>
+        <text x="541" y="233" class="lt" text-anchor="middle">DataService — קריאה + 3 שכבות מטמון</text>
+        <rect x="70" y="214" width="298" height="30" rx="7" class="bxn"/>
+        <text x="219" y="233" class="lt" text-anchor="middle">WriteQueue — כתיבה, ניסיון חוזר, flush</text>
+
+        <rect x="8" y="278" width="744" height="78" rx="10" class="band"/>
+        <text x="740" y="296" class="ll" text-anchor="end">APPS SCRIPT</text>
+        <rect x="560" y="304" width="130" height="30" rx="7" class="bx"/><text x="625" y="323" class="lt" text-anchor="middle">doGet</text>
+        <rect x="418" y="304" width="130" height="30" rx="7" class="bxn"/><text x="483" y="323" class="lt" text-anchor="middle">doPost</text>
+        <rect x="276" y="304" width="130" height="30" rx="7" class="bxn"/><text x="341" y="323" class="lt" text-anchor="middle">אימות + מושב</text>
+        <rect x="134" y="304" width="130" height="30" rx="7" class="bxn"/><text x="199" y="323" class="lt" text-anchor="middle">Gemini + פרסר אשראי</text>
+
+        <rect x="8" y="368" width="744" height="94" rx="10" class="band"/>
+        <text x="740" y="386" class="ll" text-anchor="end">GOOGLE SHEETS</text>
+        <g>
+          <rect x="612" y="394" width="78" height="24" rx="5" class="bx"/><text x="651" y="410" class="lb" text-anchor="middle">תנועות</text>
+          <rect x="526" y="394" width="78" height="24" rx="5" class="bx"/><text x="565" y="410" class="lb" text-anchor="middle">מחירים</text>
+          <rect x="440" y="394" width="78" height="24" rx="5" class="bxn"/><text x="479" y="410" class="lb" text-anchor="middle">חשבונות</text>
+          <rect x="354" y="394" width="78" height="24" rx="5" class="bxn"/><text x="393" y="410" class="lb" text-anchor="middle">ניירות</text>
+          <rect x="268" y="394" width="78" height="24" rx="5" class="bxn"/><text x="307" y="410" class="lb" text-anchor="middle">שערי מט"ח</text>
+          <rect x="182" y="394" width="78" height="24" rx="5" class="bxn"/><text x="221" y="410" class="lb" text-anchor="middle">אשראי</text>
+          <rect x="96" y="394" width="78" height="24" rx="5" class="bxn"/><text x="135" y="410" class="lb" text-anchor="middle">סוחרים</text>
+          <rect x="612" y="426" width="78" height="24" rx="5" class="bxn"/><text x="651" y="442" class="lb" text-anchor="middle">מנויים</text>
+          <rect x="526" y="426" width="78" height="24" rx="5" class="bxn"/><text x="565" y="442" class="lb" text-anchor="middle">תקציב</text>
+          <rect x="440" y="426" width="78" height="24" rx="5" class="bxn"/><text x="479" y="442" class="lb" text-anchor="middle">הלוואות</text>
+          <rect x="354" y="426" width="78" height="24" rx="5" class="bxn"/><text x="393" y="442" class="lb" text-anchor="middle">חסכונות</text>
+          <rect x="268" y="426" width="78" height="24" rx="5" class="bxn"/><text x="307" y="442" class="lb" text-anchor="middle">נכסים</text>
+          <rect x="182" y="426" width="78" height="24" rx="5" class="bxn"/><text x="221" y="442" class="lb" text-anchor="middle">תזות</text>
+          <rect x="96" y="426" width="78" height="24" rx="5" class="bxn"/><text x="135" y="442" class="lb" text-anchor="middle">החלטות</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>קווים מלאים — קיים היום. מסגרת מקווקוות בצהוב — נוסף באפיון. הטאבים "שיטות" ו"יעדים" הושמטו מהתרשים מטעמי מקום, והם חלק מהמודל.</figcaption>
+  </figure>
+
+  <h3>הישויות</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:20%">ישות</th><th style="width:11%">מצב</th><th>שדות מפתח ומה זה פותח</th></tr></thead>
+      <tbody>
+        <tr><td><strong>תנועות</strong></td><td><span class="pill have">קיים</span></td><td>תאריך, תיק, סימבול, סוג, כמות, שער ביצוע, סכום, יתרת מזומן. <strong>שינוי אחד:</strong> <code>Portfolio</code> הופך למפתח לטבלת חשבונות במקום טקסט חופשי.</td></tr>
+        <tr><td><strong>מחירים</strong></td><td><span class="pill have">קיים</span></td><td>מחיר חי + היסטוריה מותאמת פיצולים. נשאר כמו שהוא.</td></tr>
+        <tr><td><strong>חשבונות</strong></td><td><span class="pill part">להרחיב</span></td><td>מזהה, שם, <em>סוג</em> (ברוקראז' · בנק · כרטיס אשראי · פנסיה · גמל · השתלמות · פיקדון · הלוואה · נדל"ן · מזומן), מוסד, מטבע, 4 ספרות אחרונות, פעיל. <b>כבר קיים כטאב <code>Protfolios</code></b> עם שתי עמודות — להרחיב ולתקן את שם הטאב.</td></tr>
+        <tr><td><strong>ניירות</strong></td><td><span class="pill part">שמור מראש</span></td><td>סימבול, שם מלא, סוג נכס, סקטור, גאוגרפיה, מטבע. <b><code>CFG</code> כבר מצפה לטאב בשם <code>Symbols</code></b> — הוא פשוט עוד לא נוצר.</td></tr>
+        <tr><td><strong>שערי מט"ח</strong></td><td><span class="pill part">להרחיב</span></td><td>תאריך, זוג, שער. <b>הטאב <code>USD_ILS</code> קיים עם שורה אחת</b> — להפוך לטבלה. מתקן את ממצא 10. נטען פעם אחת עם <code>GOOGLEFINANCE</code> ואז מתעדכן יומית.</td></tr>
+        <tr><td><strong>אשראי</strong></td><td><span class="pill new">חדש</span></td><td>תאריך קנייה, תאריך חיוב, סוחר גולמי, סוחר מנורמל, סכום, מטבע מקורי, סכום מקורי, עמלת המרה, קטגוריה, כרטיס, <code>purchaseId</code> (לתשלומים), מספר תשלום מתוך כמה, מקור הקליטה. הטבלה הכי עמוסה במודל — סעיפים 06 ו-07.</td></tr>
+        <tr><td><strong>סוחרים</strong></td><td><span class="pill new">חדש</span></td><td>תבנית זיהוי, שם מוצג, קטגוריית ברירת מחדל. זו טבלת הלמידה — כל תיקון שלך כותב בה שורה.</td></tr>
+        <tr><td><strong>מנויים</strong></td><td><span class="pill new">חדש</span></td><td>סוחר, סכום צפוי, תדירות, פעיל, תאריך זיהוי. נוצרת אוטומטית מזיהוי חזרתיות, מאושרת ידנית.</td></tr>
+        <tr><td><strong>תקציב</strong></td><td><span class="pill new">חדש</span></td><td>קטגוריה, חודש, מתוכנן. מייצר "תכנון מול ביצוע" — בדיוק המסך שכבר בנית ב-CBA.</td></tr>
+        <tr><td><strong>הלוואות</strong></td><td><span class="pill new">חדש</span></td><td>קרן מקורית, ריבית, סוג (קבועה · משתנה · צמודה), תאריך התחלה, מספר תשלומים, יום חיוב, מלווה, ייעוד.</td></tr>
+        <tr><td><strong>חסכונות וצבירה</strong></td><td><span class="pill new">חדש</span></td><td>קרן/פיקדון, סוג, מסלול, יתרה בתאריך, הפקדה חודשית (עובד · מעסיק · פיצויים), דמי ניהול מהפקדה, דמי ניהול מצבירה, תשואה, <em>תאריך נזילות</em>. ישות של צילומי מצב, לא של תנועות.</td></tr>
+        <tr><td><strong>נכסים אחרים</strong></td><td><span class="pill new">חדש</span></td><td>נדל"ן, רכב, קריפטו — שווי מוערך + תאריך הערכה + מקור ההערכה. תמיד מסומן כהערכה.</td></tr>
+        <tr><td><strong>יעדים</strong></td><td><span class="pill new">חדש</span></td><td>שם, סכום יעד, תאריך יעד, חשבונות מקושרים.</td></tr>
+        <tr><td><strong>תזות · החלטות · שיטות</strong></td><td><span class="pill new">חדש</span></td><td>שלוש טבלאות שהן הלב של דרישת המחקר. מפורטות בסעיף 05.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call">
+    <span class="h">כלל אחד שקובע הכול</span>
+    פוזיציות, שווי נקי, תשואות, לוחות סילוקין וסיכומי הוצאה <strong>לא נשמרים</strong>. הם מחושבים מהתנועות בכל טעינה — בדיוק כמו שמנוע ה-FIFO עובד היום. מספר שמור הוא מספר שיסתור את המקור שלו בעוד חודש.
+  </div>
+</section>
+
+<!-- ══════════ 5 ══════════ -->
+<section id="s5">
+  <h2><span class="num">05</span>מנוע התחקור</h2>
+  <p class="lead">דרישת המחקר: לתחקר את שיטות המחקר שלך ולהסיק מסקנות. האפליקציה כבר יודעת להגיד לך מה אחוז העסקאות הרווחיות שלך. היא לא יודעת להגיד <em>למה</em> — כי אין בה שום תיעוד של מה חשבת כשקנית.</p>
+
+  <h3>שלוש הטבלאות</h3>
+  <div class="grid">
+    <div class="tile">
+      <h4>תזה</h4>
+      <p>נייר או סל, תאריך פתיחה, השיטה שהובילה אליה, הטקסט עצמו, קטליזטורים צפויים, <strong>מה יפריך אותה</strong>, אופק זמן, גודל פוזיציה מתוכנן, ביטחון 1–5, מצב (פתוחה · מומשה · הופרכה · פגה).</p>
+    </div>
+    <div class="tile">
+      <h4>החלטה</h4>
+      <p>קישור לתזה, תאריך, פעולה, נימוק בשורה, והשדה שעושה את כל ההבדל: <strong>לפי התוכנית או חריגה ממנה</strong>.</p>
+    </div>
+    <div class="tile">
+      <h4>שיטה</h4>
+      <p>שם, תיאור, מקורות מידע, מתי היא מתאימה. זו הישות שמאפשרת לשאול "איזו שיטה עובדת לי" ולא רק "איזו מניה עבדה לי".</p>
+    </div>
+  </div>
+
+  <div class="call warn">
+    <span class="h">השדה החשוב ביותר במסמך הזה</span>
+    <strong>"מה יפריך את התזה".</strong> בלעדיו יומן מחקר הוא אוסף הסברים בדיעבד. איתו, כל פוזיציה נושאת מבחן שאפשר להריץ עליה — והאפליקציה יכולה להתריע כשתנאי ההפרכה התקיים ואתה עדיין מחזיק.
+  </div>
+
+  <h3>מה המנוע מחשב</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:30%">מדד</th><th>השאלה שהוא עונה עליה</th></tr></thead>
+      <tbody>
+        <tr><td><strong>תוחלת לעסקה</strong><br><span style="font-size:13px;color:var(--mut)">אחוז הצלחה × רווח ממוצע − אחוז כישלון × הפסד ממוצע</span></td><td>האם השיטה רווחית בכלל, בנפרד מהשאלה כמה פעמים צדקת. אחוז הצלחה נמוך עם יחס רווח־הפסד גבוה הוא שיטה טובה.</td></tr>
+        <tr><td><strong>TWR מול XIRR</strong></td><td>תשואה משוקללת־זמן מודדת את איכות הבחירות. תשואה משוקללת־כסף מודדת גם את התזמון של ההפקדות. הפער ביניהן אומר אם אתה מפקיד בזמן הלא נכון.</td></tr>
+        <tr><td><strong>מול מדד ייחוס</strong></td><td>מה היה קורה אם אותו כסף, באותם תאריכים, היה נכנס ל-SPY. זו השאלה היחידה שקובעת אם המחקר שווה את הזמן.</td></tr>
+        <tr><td><strong>מבחן המכירה המוקדמת</strong></td><td>ביצועי כל מניה שמכרת, מיום המכירה ועד היום. אם התיק ה"נמכר" מכה את המוחזק — אתה מוכר מוקדם מדי.</td></tr>
+        <tr><td><strong>זמן החזקה מול תשואה</strong></td><td>פיזור של 112 העסקאות הסגורות לפי ימי החזקה. מראה אם הרווח מרוכז בהחזקות ארוכות או קצרות.</td></tr>
+        <tr><td><strong>פילוח לפי שיטה</strong></td><td>אותם מדדים בחתך שיטת המחקר. זה מה שהופך "אני משקיע" ל"השיטה הזאת עובדת לי, זו לא".</td></tr>
+        <tr><td><strong>עלות החיכוך</strong></td><td>עמלות + ריבית חובה + דמי ניהול + מס, כאחוז מהרווח הגולמי. כל הרכיבים כבר מסווגים ב-Classifier — רק אף אחד לא סוכם אותם.</td></tr>
+        <tr><td><strong>ריכוזיות התוצאה</strong></td><td>כמה מהתשואה מגיעה משלוש הפוזיציות הגדולות. אם 90% — לא הוכחת שיטה, הוכחת מקרה אחד.</td></tr>
+        <tr><td><strong>ציות לתוכנית</strong></td><td>אחוז ההחלטות שסומנו כחריגה, והתשואה שלהן מול המצייתות. המדד שהכי כואב והכי מלמד.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call ok">
+    <span class="h">כמה מזה אפשר לחשב כבר היום</span>
+    שבעה מתשעת המדדים דורשים רק את מה שכבר קיים — <code>computeClosedTrades</code>, היסטוריית מחירים, וה-Classifier. רק "פילוח לפי שיטה" ו"ציות לתוכנית" דורשים את הטבלאות החדשות. אפשר לבנות את המנוע בשלבים ולהתחיל להפיק ערך לפני שכתבת שורה אחת ליומן.
+  </div>
+</section>
+
+<!-- ══════════ 6 ══════════ -->
+<section id="s6">
+  <h2><span class="num">06</span>הוצאות ואשראי</h2>
+  <p class="lead">המסך "הכנסות והוצאות" הקיים מציג רק תזרים <em>של הברוקר</em> — דיבידנדים, עמלות, מיסים. הוא לא יודע דבר על משכורת, שכר דירה או קניות. הסעיף הזה הופך אותו למודול תחקור הוצאות מלא.</p>
+
+  <h3>מאיפה מגיעים הנתונים</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:22%">נתיב</th><th style="width:14%">מאמץ</th><th>איך זה עובד</th></tr></thead>
+      <tbody>
+        <tr><td><strong>קובץ מהחברה</strong><br><span class="pill new">מומלץ</span></td><td><span class="pill part">בינוני</span></td><td>מורידים את פירוט החיובים כ-Excel/CSV מאתר חברת האשראי, שומרים בתיקיית Drive ייעודית. Apps Script סורק את התיקייה, מזהה את המנפיק לפי הכותרות, מפרסר לטאב "אשראי" ומעביר את הקובץ ל"עובד". מודול פרסור אחד לכל מנפיק — קצר ובלתי תלוי באחרים.</td></tr>
+        <tr><td><strong>סריקה עם Gemini</strong></td><td><span class="pill have">נמוך</span></td><td>לפורמט שאין לו פרסר, לצילום או ל-PDF. אותה שכבה שכבר עובדת ב-CBA לקבלות. משמש כרשת ביטחון, לא כנתיב הראשי — הוא איטי יותר ולא דטרמיניסטי.</td></tr>
+        <tr><td><strong>הזנה ידנית</strong></td><td><span class="pill have">נמוך</span></td><td>למזומן, ביט, והעברות שלא עוברות בכרטיס. טופס קצר, שלושה שדות.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call bad">
+    <span class="h">נשקל ונדחה: גרידה אוטומטית מהבנק</span>
+    הספרייה <code>israeli-bank-scrapers</code> היא הכלי המלא ביותר לכך, והיא תומכת בכל הבנקים וחברות האשראי בישראל. היא נדחית כאן משתי סיבות: היא דורשת Node ו-Puppeteer על מכונה שרצה ברקע — שובר את כלל "בלי התקנות בטרמינל"; והיא מחייבת לאחסן את פרטי הכניסה לבנק — שובר את כלל "סודות לא נכנסים לקוד". נשארת על השולחן אם יום אחד יהיה לך שרת קטן משלך.
+  </div>
+
+  <h3>חמש המלכודות של נתוני אשראי בישראל</h3>
+  <ol>
+    <li><strong>תשלומים.</strong> קנייה ב-12 תשלומים מייצרת 12 חיובים לאורך שנה. אם סופרים חיובים — ההוצאה מפוזרת ולא רואים את הקנייה; אם סופרים קניות — התזרים לא נכון. <em>הפתרון:</em> לשמור את שניהם. שדה <code>purchaseId</code> מקשר את כל התשלומים לקנייה אחת, ומתג בממשק בוחר "לפי מועד חיוב" או "לפי מועד קנייה". <strong>ברירת מחדל: חיוב</strong> — זה מה שבאמת יוצא מהחשבון.</li>
+    <li><strong>כפילות בין הבנק לאשראי.</strong> החיוב החודשי המרוכז מופיע בעו"ש כשורה אחת, והפירוט מופיע בכרטיס. קליטת שניהם סופרת את ההוצאה פעמיים. <em>הפתרון:</em> החיוב המרוכז מסומן אוטומטית כ"העברה פנימית" ולא כהוצאה.</li>
+    <li><strong>שם הסוחר לא יציב.</strong> אותה חנות מופיעה כ-<code>SHUFERSAL DEAL 456</code> וכ"שופרסל דיל". <em>הפתרון:</em> טבלת נירמול בגיליון — תבנית ← שם מוצג + קטגוריה. כל תיקון שלך כותב שורה חדשה. המערכת לומדת בלי AI.</li>
+    <li><strong>זיכויים והחזרות.</strong> סכום שלילי בכרטיס. חייב להתקזז מול הקנייה המקורית ולא להיספר כהכנסה — אחרת חודש עם החזרה גדולה ייראה כמו חודש עם הכנסה נוספת.</li>
+    <li><strong>מט"ח.</strong> קנייה בדולר מחויבת בשקל לפי שער יום החיוב, בתוספת עמלת המרה. לשמור בנפרד את הסכום המקורי, השער והעמלה — אחרת עמלת ההמרה נעלמת לתוך ההוצאה ואי אפשר לדעת כמה היא עולה בשנה.</li>
+  </ol>
+
+  <h3>סיווג — כללים קודם, AI אחר כך</h3>
+  <p>ארבע שכבות, בסדר הזה. כל שכבה מטפלת במה שהקודמת לא ידעה:</p>
+  <ol>
+    <li><strong>התאמה מדויקת</strong> בטבלת הסוחרים — מיידית, חינם, דטרמיניסטית.</li>
+    <li><strong>כלל</strong> — "מכיל", תבנית, טווח סכומים. יושב בגיליון, ניתן לעריכה.</li>
+    <li><strong>AI</strong> — רק לשארית שאף כלל לא תפס. מציע קטגוריה, אף פעם לא קובע.</li>
+    <li><strong>"לא מסווג"</strong> — דלי גלוי עם מונה. אם הוא גדל, משהו שבור.</li>
+  </ol>
+  <p>אישור של הצעה כותב כלל חדש, כך שאותו סוחר לא נשאל פעמיים. <strong>היעד:</strong> אחרי שלושה חודשי שימוש, פחות מ-5% לא מסווג וה-AI כמעט לא רץ.</p>
+
+  <h3>מה המנוע מתחקר</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:28%">חתך</th><th>השאלה</th></tr></thead>
+      <tbody>
+        <tr><td><strong>קטגוריה · סוחר · כרטיס · חודש</strong></td><td>לאן הכסף הולך, בארבעה חתכים מצטלבים.</td></tr>
+        <tr><td><strong>קבוע מול משתנה</strong></td><td>כמה מההוצאה שלי כבר נעולה לפני שהחודש התחיל.</td></tr>
+        <tr><td><strong>מגמה</strong></td><td>החודש מול ממוצע 3 חודשים, מול ממוצע שנה, ומול אותו חודש אשתקד.</td></tr>
+        <tr><td><strong>חריגות</strong></td><td>הוצאה שחורגת מהטווח הרגיל של אותה קטגוריה. לא "יקר" — <em>חריג ביחס לעצמך</em>.</td></tr>
+        <tr><td><strong>סוחרים חדשים</strong></td><td>איפה הוצאתי החודש כסף במקום שלא הוצאתי בו קודם.</td></tr>
+        <tr><td><strong>מנויים</strong></td><td>אותו סוחר, סכום דומה, מרווח חודשי → מסך "מה אני משלם כל חודש", עם עלות שנתית לכל מנוי. זה בדרך כלל המסך שמחזיר את ההשקעה בכל המודול.</td></tr>
+        <tr><td><strong>הוצאה שקטה</strong></td><td>קטגוריה שגדלה בהדרגה לאורך שישה חודשים ומעלה — עלייה שאף חודש בודד לא מסגיר.</td></tr>
+        <tr><td><strong>התחייבויות עתידיות</strong></td><td>תשלומים פתוחים + מנויים + החזרי הלוואות = כמה מהחודשים הבאים כבר מחויב.</td></tr>
+        <tr><td><strong>שיעור חיסכון</strong></td><td>הכנסה פחות הוצאה, כאחוז. המספר היחיד שמסכם את כל המודול.</td></tr>
+        <tr><td><strong>הגשר להשקעות</strong></td><td>איזה חלק מההוצאה החודשית מכוסה בדיבידנדים וריבית. המספר שמחבר את שני חצאי האפליקציה.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>פרטיות</h3>
+  <div class="call bad">
+    <span class="h">שלושה כללים לא ניתנים למשא ומתן</span>
+    מספר כרטיס מלא <strong>לא נשמר לעולם</strong> — ארבע ספרות אחרונות בלבד, ורק לזיהוי הכרטיס. קובץ הפירוט המקורי נשאר בדרייב הפרטי; רק השורות המפורסרות נכנסות לגיליון. וקליטה מ-Gmail היא החלטה נפרדת ופתוחה, כי היא נותנת לסקריפט גישת קריאה לתיבה שלך — <strong>ההמלצה שלי: לא. תיקיית Drive מספיקה לחלוטין.</strong>
+  </div>
+</section>
+
+<!-- ══════════ 7 ══════════ -->
+<section id="s7">
+  <h2><span class="num">07</span>קליטת נתונים</h2>
+  <p class="lead">הסעיף הזה מסמן שאלה גדולה ופותח אותה — הוא לא סוגר אותה. קליטת קבצים היא הרכיב שהכי מסוכן לאלתר, והוא דורש אפיון משלו לפני שכותבים לו שורת קוד.</p>
+
+  <div class="call warn">
+    <span class="h">מה שהתברר עכשיו משנה את היקף הבעיה</span>
+    היום אתה מזין את התנועות בהעתק־הדבק מדוחות הברוקר, <strong>ולכל תיק יש פורמט דוח משלו</strong>. כלומר בעיית הקליטה איננה בעיה של כרטיסי אשראי בלבד — היא כבר קיימת בליבה של האפליקציה, ופשוט מבוצעת ידנית. מודול האשראי לא <em>יוצר</em> את הבעיה; הוא הופך אותה לגלויה. לכן מנוע הקליטה נבנה פעם אחת ומשרת את שני העולמות: דוחות ברוקר ופירוטי אשראי.
+  </div>
+
+  <h3>למה העתק־הדבק הוא הסיכון, לא הפתרון</h3>
+  <p>העתק־הדבק עובד היום, והוא לא יימחק ביום אחד. אבל הוא מכניס אדם לאמצע השרשרת, ובדיוק שם נכנסות הטעויות שאין להן עקבות: עמודה שהוזזה, שורה שנכפלה, טווח תאריכים שנקלט פעמיים, דוח שהודבק ובאמצע שינו לו את הכותרות. אף אחת מהטעויות האלה לא מתפוצצת — כולן פשוט מזיזות מספר. מנוע קליטה, לעומת זאת, יכול להגיד "השורה הזאת כבר קיימת" ו"את השורה הזאת לא הבנתי", וזה כל ההבדל.</p>
+
+  <div class="call">
+    <span class="h">מלכודת התכנון שחלה כאן</span>
+    מנגנון שלא יכול להגיד "לא" הוא קישוט. קליטה שתמיד מדווחת הצלחה אינה שווה את הקוד שלה — לפני שבונים אותה צריך לדעת בדיוק מה המקרה שבו היא נדלקת באדום.
+  </div>
+
+  <h3>שמונה השאלות שהאפיון הייעודי חייב לענות עליהן</h3>
+  <div class="finds">
+    <div class="find">
+      <div class="fn">01</div>
+      <div>
+        <div class="ft">מה בדיוק המקורות</div>
+        <p>רשימה סגורה: כל תיק השקעות, כל כרטיס אשראי, וחשבון הבנק. לכל מקור — איזה קובץ בדיוק מורידים, מאיזה מסך, באיזו תדירות, ובאיזה פורמט. בלי הרשימה הזאת אי אפשר לכתוב אפילו פרסר אחד.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">02</div>
+      <div>
+        <div class="ft">מיפוי עמודות לכל פורמט</div>
+        <p>איך נראית שורת אמת בכל דוח, ואיזו עמודה שם ממופה לאיזה שדה אצלנו. המיפוי יושב <strong>בגיליון ולא בקוד</strong> — כשחברה משנה כותרת, זה תיקון שורה ולא דיפלוי.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">03</div>
+      <div>
+        <div class="ft">איך מזהים כפילות — השאלה הקשה</div>
+        <p>נדרשת <em>טביעת אצבע</em> יציבה לכל שורה. אם המקור נותן מזהה עסקה — הוא המפתח, וזה הפתרון הנקי. אם לא — מפתח מורכב מתאריך, סכום, מקור, וסימבול או שם סוחר. הטביעה חייבת להיות יציבה בין הורדה להורדה: שדה שמשתנה (יתרה מצטברת, שורה מספר, תאריך הפקת הדוח) לא נכנס אליה לעולם.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">04</div>
+      <div>
+        <div class="ft">חפיפת טווחים</div>
+        <p>כל דוח חדש כולל תקופה שכבר נקלטה. <strong>הכלל:</strong> הקליטה תמיד אידמפוטנטית — טוענים את הקובץ כולו, כותבים רק את מה שאין. אפשר להריץ את אותו קובץ עשר פעמים בלי לשנות כלום. זה גם מה שמאפשר לרוץ אחורה על ארכיון ישן בלי חשש.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">05</div>
+      <div>
+        <div class="ft">כשמקור מתקן את עצמו למפרע</div>
+        <p>סכום שהתעדכן, עסקה שבוטלה, סטטוס שהשתנה מ"בהמתנה" ל"סופי". שורה קיימת שהשתנתה אינה כפילות ואינה שורה חדשה — היא <em>עדכון</em>, וצריך להחליט אם מעדכנים בשקט, מסמנים, או שואלים.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">06</div>
+      <div>
+        <div class="ft">שורה שהפרסר לא הבין</div>
+        <p>לא לזרוק, ולא לנחש. טאב "בהמתנה" שמחזיק את השורה הגולמית ואת הסיבה שלא נקלטה, ומסך שמראה אותן. שורה שנעלמה בשקט היא הדרך הבטוחה ביותר לאבד אמון בכל המספרים.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">07</div>
+      <div>
+        <div class="ft">איך יודעים שהקליטה הצליחה</div>
+        <p>מסך "קליטות אחרונות": מתי, איזה קובץ, מאיזה מקור, כמה שורות חדשות נכנסו, כמה כפילויות נדחו, כמה נכשלו ולמה. <strong>חצי מהעבודה כבר עשויה:</strong> טאב <code>Log</code> קיים בגיליון עם Timestamp, RunId, Function, Event, Status ו-Details, וה-Apps Script כבר כותב אליו. צריך להרחיב את סוגי האירועים ולצייר מסך מעליו.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">08</div>
+      <div>
+        <div class="ft">מבנה התיקייה ומה קורה לקובץ אחרי</div>
+        <p>תיקייה אחת עם זיהוי אוטומטי של המקור, או תיקייה לכל מקור. ואחרי הקליטה — הקובץ עובר ל"עובד" עם חותמת תאריך, כדי שלא ייקלט שוב בטעות ושתמיד יהיה אפשר לחזור למקור.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="call ok">
+    <span class="h">מתי נעשה את זה</span>
+    האפיון הזה נכנס כסבב עבודה נפרד בתחילת שלב 4, אחרי שהכתיבה כבר עובדת ולפני שנכתב הפרסר הראשון. הוא קצר — חצי עמוד לכל מקור — אבל הוא חייב להיעשות מול הקבצים האמיתיים שלך פתוחים, לא מהזיכרון.
+  </div>
+</section>
+
+<!-- ══════════ 8 ══════════ -->
+<section id="s8">
+  <h2><span class="num">08</span>לקחים מאפליקציות תקציב</h2>
+  <p class="lead">RiseUp והדומות לה פתרו את בעיית ההרגל, לא את בעיית החישוב. זה מה ששווה לקחת מהן — ומה שלא.</p>
+
+  <h3>שבעה דפוסים שכדאי לאמץ</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:26%">הדפוס</th><th>מה זה אומר אצלנו</th></tr></thead>
+      <tbody>
+        <tr><td><strong>התזרים הוא המספר הראשי</strong></td><td>RiseUp מארגנת הכול סביב "תזרים חיובי" — כמה נכנס פחות כמה יצא החודש. יתרת הבנק היא רעש; התזרים הוא האות. <em>אצלנו:</em> מסך ההוצאות נפתח במספר אחד גדול — התזרים החודשי — ורק מתחתיו הפירוט.</td></tr>
+        <tr><td><strong>קבוע מול משתנה קודם לקטגוריות</strong></td><td>החלוקה הראשונה אינה "מזון / תחבורה / בילויים" אלא "מה כבר נעול" מול "מה בשליטה שלי". <em>אצלנו:</em> שתי קבוצות־על במסך, והקטגוריות יושבות בתוכן. זה גם מה שהופך את התחזית לאפשרית.</td></tr>
+        <tr><td><strong>תחזית לסוף החודש</strong></td><td>המערכת מחשבת תחזית להמשך החודש מהתנהגות החודשים הקודמים. <em>אצלנו:</em> מנוע קל — קצב שריפה יומי בקטגוריות המשתנות × ימים שנותרו, ועוד ההתחייבויות הידועות (תשלומים פתוחים, מנויים, החזרי הלוואות). לא צריך יותר מזה.</td></tr>
+        <tr><td><strong>"כמה נשאר לי" ולא "כמה הוצאתי"</strong></td><td>ניסוח קדימה במקום אחורה. אותו נתון בדיוק, אבל אחד מדווח והשני מאפשר להחליט. <em>אצלנו:</em> זה כלל ניסוח לכל מסך ההוצאות.</td></tr>
+        <tr><td><strong>החלטה אחת קטנה בכל פעם</strong></td><td>הן מתרגמות מספרים למיקרו־החלטות במקום להציף בדוחות. <em>אצלנו:</em> כל התראה חייבת להציע פעולה, לא רק לדווח מספר. "מנוי חדש זוהה — לאשר, לדחות, או לסמן לביטול" ולא "זוהה חיוב חוזר".</td></tr>
+        <tr><td><strong>ההרגל הוא המוצר</strong></td><td>אפליקציות תקציב מתות מהזנה ידנית, לא מחוסר פיצ'רים. <em>אצלנו:</em> כל דבר שדורש הזנה ידנית חוזרת הוא סיכון קיומי למודול — וזה כל ההצדקה לסיווג האוטומטי ולקליטה מקובץ.</td></tr>
+        <tr><td><strong>גם מתחרה ידני לגמרי עובד</strong></td><td>"סכם לי", חלופה ישראלית חינמית, בנויה כולה על הזנה ידנית — עם הוצאות קבועות מוגדרות מראש ומעקב שבועי ויומי — ומצליחה. <em>המסקנה:</em> אם החלוקה קבוע/משתנה והקטגוריות נכונות, הערך מגיע עוד לפני האוטומציה. אפשר להתחיל פשוט.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>ארבעה דברים שלא לוקחים</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:30%">מה</th><th>למה לא</th></tr></thead>
+      <tbody>
+        <tr><td><strong>חיבור לבנק בשיתוף סיסמאות</strong></td><td>זה הלב של המודל שלהן, וזה בדיוק מה שדחינו. הן דורשות את פרטי הכניסה לבנק ולכרטיסים. אנחנו בונים על קובץ שאתה מוריד — פחות נוח פעם בחודש, ובלי למסור לאף אחד גישה לחשבון.</td></tr>
+        <tr><td><strong>ציון או דירוג התנהגות</strong></td><td>משטח לא מדויק שמייצר תחושת אשמה בלי להוסיף מידע. מספר שאי אפשר לפעול לפיו הוא רעש.</td></tr>
+        <tr><td><strong>"חסכת X" כמספר שיווקי</strong></td><td>מספר שאי אפשר לאמת ולא ברור מול מה נמדד. הכלל שלנו הפוך: כל מספר ניתן לצלילה עד לתנועה שיצרה אותו.</td></tr>
+        <tr><td><strong>ריבוי פיצ'רים שנובע ממודל מנוי</strong></td><td>הן חייבות להצדיק תשלום חודשי, ולכן מוסיפות תוכן, קהילה וליווי. אצלך אין מה להצדיק — האפליקציה יכולה לעשות דבר אחד היטב.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call">
+    <span class="h">ההבדל המהותי</span>
+    RiseUp נבנתה למי שמנסה לצאת ממינוס ולשנות הרגלים, ולכן היא מייעצת. FinanceAPP נבנית למי שכבר עוקב ורוצה להבין — ולכן היא <strong>מתחקרת</strong>. הפער הזה קובע ניסוח: אצלן "כדאי לך להוציא פחות על X", אצלנו "ההוצאה על X עלתה ב-40% מול הרבעון הקודם, הנה שלוש התנועות שגרמו לזה".
+  </div>
+</section>
+
+<!-- ══════════ 9 ══════════ -->
+<section id="s9">
+  <h2><span class="num">09</span>התחייבויות וצבירה</h2>
+  <p class="lead">הלוואות, חסכונות, פנסיה ושווי נקי. שלושה מנועים, כל אחד עונה על שאלה שהיום אין לה תשובה.</p>
+
+  <h3>הלוואות — לוח סילוקין</h3>
+  <p>מנוע שמייצר מהפרמטרים לוח תשלומים מלא ועונה על שלוש שאלות: כמה ריבית כבר שילמתי, כמה קרן נשארה, ומה קורה אם אפרע סכום מוקדם — כמה ריבית נחסכת וכמה חודשים מתקצרים. לוח סילוקין הוא חישוב סגור: אין צורך בשירות חיצוני, רק בפרמטרים נכונים. <strong>הלוואה צמודת מדד</strong> דורשת מדד מחירים היסטורי, שאינו זמין דרך <code>GOOGLEFINANCE</code> — נדרש מקור נפרד או הזנה חודשית ידנית.</p>
+
+  <h3>חסכונות — המסך שנשאר</h3>
+  <div class="call ok">
+    <span class="h">תיקון להמלצה הקודמת</span>
+    המלצתי להסיר את "חסכונות" מהתפריט וטעיתי. הבעיה הייתה שהמסך <em>ריק</em>, לא שהוא מיותר. חסכונות הם ישות בעלת צורת נתונים שונה לגמרי מתיקי השקעות, ולכן הם צריכים מסך משלהם ולא פינה בתוך מסך אחר.
+  </div>
+  <p>בתיקי השקעות יש פוזיציות ומחירים חיים; בחסכונות יש <strong>צילומי מצב</strong> — יתרה לתאריך. שתי צורות נתונים שונות מחייבות שני מסכים. המסך "חסכונות" הוא הבית של כל מה שצובר ולא נסחר:</p>
+  <ul>
+    <li>פיקדונות בנקאיים</li>
+    <li>קרן השתלמות</li>
+    <li>קופת גמל להשקעה</li>
+    <li>קרן פנסיה</li>
+    <li>חיסכון לכל ילד</li>
+  </ul>
+  <p>לכל אחד: יתרה, הפקדה חודשית, מסלול, שני סוגי דמי ניהול, ותאריך נזילות. המסך עונה על ארבע שאלות — <strong>כמה יש, כמה זה גדל, מתי זה נזיל, וכמה דמי הניהול עולים.</strong></p>
+
+  <div class="call warn">
+    <span class="h">המספר שאף דוח לא מציג</span>
+    כמה כסף דמי הניהול יעלו עד הפרישה, בהינתן הצבירה, ההפקדה החודשית והתשואה הצפויה. הפרש של 0.3% בדמי ניהול מצבירה הוא מאות אלפי שקלים על פני עשרים שנה. זה מספר שמשנה החלטות, וחישובו טריוויאלי ברגע שהנתונים בטבלה.
+  </div>
+
+  <h3>שווי נקי מאוחד</h3>
+  <p>סכימה של כל החשבונות — תיקים, בנק, חסכונות, נכסים — פחות ההלוואות ויתרות האשראי, על ציר זמן. זה המסך שהופך "אפליקציה לניהול תיקים" ל"מרכז בקרה פיננסי". שלושה כללים: כל שווי מוערך מסומן ככזה עם תאריך ההערכה, המרות מט"ח לפי שער היום־ההוא, ולחיצה על כל רכיב מובילה לחשבון שיצר אותו.</p>
+</section>
+
+<!-- ══════════ 10 ══════════ -->
+<section id="s10">
+  <h2><span class="num">10</span>UX ו-UI</h2>
+  <p class="lead">הפער אינו אסתטי אלא מבני: אין רכיבים משותפים, אין מצבי קצה, ואי אפשר לצלול פנימה. שפת העיצוב עצמה מטופלת בסעיף 11.</p>
+
+  <h3>חמישה עקרונות</h3>
+  <ol>
+    <li><strong>מסך אחד, שאלה אחת.</strong> "תיקי השקעות" עונה על "מה אני מחזיק". "ביצועים" עונה על "האם זה עבד". מסך שעונה על שתי שאלות מפצלים.</li>
+    <li><strong>המספר לפני ההסבר.</strong> הדשבורד עושה את זה נכון היום. לשמור.</li>
+    <li><strong>כל מספר נפתח.</strong> לחיצה על ערך מובילה לרכיבים שלו, ומהם לתנועות. שלוש רמות עומק, בכל מקום. זה הפיצ'ר היחיד שהופך את האפליקציה מדוח לכלי תחקור.</li>
+    <li><strong>לעולם לא נתון בלי מקור.</strong> כל שווי מוערך נושא תאריך. כל נתון מהמטמון נושא חותמת. הצבע האדום שמור לכסף שלילי, לא לשגיאות ממשק.</li>
+    <li><strong>ארבעה מצבים לכל מסך.</strong> ריק · טוען · שגיאה · חלקי. אף מסך לא נמסר בלי ארבעתם.</li>
+  </ol>
+
+  <h3>מערכת הרכיבים שצריך לבנות</h3>
+  <div class="grid">
+    <div class="tile"><h4>ui.js</h4><p>Dialog, Confirm, Toast, Drawer, Empty State, Busy Button — במקום <code>window.confirm</code> ובמקום HTML מקומי בכל דף.</p></div>
+    <div class="tile"><h4>skel.js</h4><p>שלדי טעינה בצורת התוכן: כרטיסים, טבלה, שורות, גרף. מחליף את "טוען לוח בקרה…".</p></div>
+    <div class="tile"><h4>money.js</h4><p>תא כסף אחד לכל האפליקציה: מטבע, סימן, מונוספייס, יישור עשרוני, המרה לפי השער הנכון. היום הפורמט משוכפל בחמישה קבצים.</p></div>
+    <div class="tile"><h4>chart.js</h4><p>הגרפים ב-SVG כבר נכתבים ידנית בשלושה דפים. לאחד לרכיב אחד: קו, עמודות, דונאט, ספארקליין — עם אותו טיפול בטווח, tooltip וריק.</p></div>
+    <div class="tile"><h4>table.js</h4><p>מיון, סינון עמודה, חיפוש, וקריסה לכרטיסים במובייל. היומן כבר מימש את כל זה — צריך לחלץ אותו.</p></div>
+    <div class="tile"><h4>search.js</h4><p>חיפוש גלובלי אחד על מה שכבר בזיכרון: טיקרים, תנועות, סוחרים, חשבונות, תזות. בלי קריאת רשת חדשה.</p></div>
+  </div>
+
+  <h3>מובייל ותקציב ביצועים</h3>
+  <p>ה-bottom nav כבר קיים ועובד. מה שחסר: כל טבלה חייבת קריסה לכרטיסים (היומן עושה זאת, התיקים והביצועים לא), הגרפים צריכים גובה מינימלי מוגדר, וה-PWA צריך manifest ואייקון.</p>
+  <div class="call">
+    <span class="h">היעד</span>
+    מסך ראשון מצויר תוך <strong>שנייה אחת</strong> מהמטמון, נתונים טריים תוך <strong>שלוש</strong>. הדרך לשם: לצייר מיד מ-localStorage, לרענן ברקע, ולהוציא את היסטוריית המחירים מנתיב הטעינה הראשוני — הגרף בדשבורד יכול להיטען אחרי שהמספרים כבר על המסך.
+  </div>
+</section>
+
+<!-- ══════════ 11 ══════════ -->
+<section id="s11">
+  <h2><span class="num">11</span>שפת העיצוב</h2>
+  <p class="lead">זכוכית נוזלית בסגנון iOS&nbsp;27, על גבי הרייל הכהה הקיים, עם פינות עגולות יותר ומערכת צבע שמקודדת משמעות. הארכיטקטורה לא משתנה — רק השכבה שמעליה.</p>
+
+  <div class="call ok">
+    <span class="h">הוכרע: כיוון A</span>
+    שומרים את הרייל הכהה — הוא מה שמאפשר לגדול לתשעה מסכים, והוא מה שגורם לזכוכית הבהירה להיקרא כזכוכית ולא כטשטוש. ממנו והלאה מאמצים את הכול: סרגל עליון זכוכית, מחוון ניווט נוזלי, specular highlight, מיקרו־אינטראקציות, ומערכת הצבע.
+  </div>
+
+  <h3>מה iOS 27 שינה — ומה זה אומר בקוד</h3>
+  <p>הגרסה הראשונה של Liquid Glass ספגה ביקורת על קריאוּת, ו-iOS 27 ו-macOS 27 הם בעיקר תיקון של זה. חמישה שינויים מתורגמים ישירות ל-CSS, וכולם מיטיבים דווקא עם אפליקציה פיננסית:</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:6%">#</th><th style="width:30%">מה אפל שינתה</th><th>התרגום שלנו</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td><strong>רדיוס פינות אחיד</strong><br><span style="font-size:13px;color:var(--mut)">אכיפה מערכתית, גם על אפליקציות צד ג'</span></td><td>סולם רדיוסים אחד לכל האפליקציה, וכל רכיב לוקח ממנו — לא ערך אד־הוק. הפינות הלא־עקביות הן בדיוק מה שגרם ל-macOS 26 להיראות לא גמור.</td></tr>
+        <tr><td class="n">2</td><td><strong>סרגלי צד נמתחים לקצה,<br>ואייקון צבעוני רק לפריט הפעיל</strong></td><td>הרייל נמתח מקצה לקצה בלי שוליים, והגוון של העולם הפיננסי מופיע <strong>רק על הפריט הפעיל</strong>. זה בדיוק מה שנותן "יותר צבעוני" בלי להפוך את התפריט לקרנבל.</td></tr>
+        <tr><td class="n">3</td><td><strong>מחוון עוצמת שקיפות</strong><br><span style="font-size:13px;color:var(--mut)">מ"צלול לגמרי" עד "מגוון לגמרי"</span></td><td>לא לקבע ערך טשטוש אחד בקוד. לחשוף אותו כמשתנה CSS עם שלושה מצבים, ולכבד את הגדרת המערכת <code>prefers-reduced-transparency</code>. משתמש שמתקשה לקרוא מקבל רקע אטום, בלי לשבור כלום.</td></tr>
+        <tr><td class="n">4</td><td><strong>קצה מוכהה + הבהקים בהירים יותר</strong><br><span style="font-size:13px;color:var(--mut)">והפצה טובה יותר של התוכן שמאחור</span></td><td>שתי שכבות גבול לכל משטח זכוכית: קו כהה־שקוף <em>מבחוץ</em> שמפריד מהרקע, וקו אור <em>מבפנים</em> שיוצר את ההשתקפות. ל-CBA יש רק את הפנימי — זה השדרוג הממשי.</td></tr>
+        <tr><td class="n">5</td><td><strong>סרגל מוקפא אחיד בגלילה</strong></td><td>הסרגל העליון מקבל שני מצבים: כמעט שקוף בראש העמוד, מוקפא כשתוכן נגלל מתחתיו. CBA כבר עושה את זה במובייל — כאן זה מורחב גם לדסקטופ.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>סולם הרדיוסים</h3>
+  <p>ביקשת יותר עיגול. במקום להעלות מספר פה ושם — סולם אחד, חמישה ערכים, וכל רכיב יושב על אחד מהם:</p>
+  <div class="radii">
+    <div class="rd"><div class="rbox" style="border-radius:10px"></div><b>10px</b><span>תג, צ'יפ פנימי</span></div>
+    <div class="rd"><div class="rbox" style="border-radius:14px"></div><b>14px</b><span>שדה קלט, כפתור קטן</span></div>
+    <div class="rd"><div class="rbox" style="border-radius:18px"></div><b>18px</b><span>כרטיס, אריח סטטיסטיקה</span></div>
+    <div class="rd"><div class="rbox" style="border-radius:24px"></div><b>24px</b><span>מודאל, מגירה, פאנל צף</span></div>
+    <div class="rd"><div class="rbox" style="border-radius:999px"></div><b>מלא</b><span>כפתור, מחוון ניווט, פילטר</span></div>
+  </div>
+  <div class="call">
+    <span class="h">הכלל שמפריד עיגול טוב מעיגול מרושל</span>
+    <strong>רדיוסים קונצנטריים:</strong> אלמנט פנימי בתוך מכל עם רדיוס R וריפוד P מקבל רדיוס <code>R − P</code>. כרטיס ברדיוס 18 עם ריפוד 4 מכיל אריח ברדיוס 14. בלי הכלל הזה הפינות הפנימיות נראות "שטוחות מדי" והחיצוניות "נפוחות" — וזה בדיוק מה ש-iOS 27 תיקן ברמת המערכת.
+  </div>
+
+  <h3>איך נראית הזכוכית</h3>
+  <p>שתי הגרסאות זו לצד זו. משמאל הטיפול הנוכחי של CBA — קו אור פנימי בלבד. מימין הטיפול של iOS&nbsp;27 — קו כהה מבחוץ שמפריד מהרקע, ובהק פנימי חזק יותר. ההבדל בולט בעיקר כשהרקע בהיר או עמוס:</p>
+  <div class="glassdemo">
+    <div class="gd-panel gd-27">
+      <div class="gd-tag">iOS 27 — מומלץ</div>
+      <div class="gd-val">₪18,411</div>
+      <div class="gd-sub">רווח ממומש · השנה</div>
+    </div>
+    <div class="gd-panel gd-26">
+      <div class="gd-tag">CBA היום</div>
+      <div class="gd-val">₪18,411</div>
+      <div class="gd-sub">רווח ממומש · השנה</div>
+    </div>
+  </div>
+  <p style="font-size:14.5px;color:var(--mut)">הרקע הצבעוני כאן הוא הדגמה בלבד — באפליקציה מה שנמצא מאחורי הזכוכית הוא התוכן, לא גרדיאנט.</p>
+
+  <h3>שלוש החלטות שכבר שולמו ב-CBA — לא לשלם עליהן שוב</h3>
+  <div class="finds">
+    <div class="find">
+      <div class="fn">א</div>
+      <div>
+        <div class="ft">זכוכית בתוך זכוכית לא עובדת</div>
+        <p>אלמנט עם <code>backdrop-filter</code> הופך ל"שורש רקע" וחוסם את הטשטוש של ילדיו. ב-CBA מגש המשתמש נראה אטום עד שהעבירו אותו ב-JS אל ה-<code>body</code>. <strong>מסקנה:</strong> כל modal, drawer ו-tooltip נבנה כילד ישיר של <code>body</code> מהיום הראשון.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">ב</div>
+      <div>
+        <div class="ft">מודאל חייב להיות כמעט אטום</div>
+        <p>ב-CBA הוא התחיל ב-<code>.86</code> ותוקן ל-<code>.97</code> כי הטקסט לא נקרא. באפליקציה פיננסית זה חמור יותר — טווח האטימות המותר למשטח שקוראים בו מספרים הוא <strong>0.94–0.98</strong>. הזכוכית נשארת רק בקצוות.</p>
+      </div>
+    </div>
+    <div class="find">
+      <div class="fn">ג</div>
+      <div>
+        <div class="ft">הקצב איטי מהאינטואיציה</div>
+        <p>מחוון הניווט התחיל ב-<code>0.32s</code> והגיע ל-<code>0.62s</code> בדסקטופ ו-<code>0.78s</code> במובייל, אחרי שביקשת פעמיים להאט. תנועה מהירה מדי היא מה שגורם לממשק להרגיש זול. להתחיל ישר מהערכים הסופיים.</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>איפה זכוכית — ואיפה אסור</h3>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:50%">כן — כרום שצף מעל תוכן</th><th>לא — תוכן שקוראים</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>סרגל עליון · רייל צד · בר תחתון במובייל · מודאל · מגירה · tooltip · צ'יפים צפים · מחוון ניווט · שכבת חיפוש · מגש משתמש</td>
+          <td>תאי טבלה · מספרים · משטחי גרפים · כרטיסי סטטיסטיקה · טפסים · כל דבר שהעין נשארת עליו יותר משתי שניות</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="call">
+    <span class="h">הכלל בשורה אחת</span>
+    זכוכית היא לכרום, לא לתוכן. באפליקציה פיננסית <strong>המספר הוא התוכן</strong>, וקריאוּת של ספרה גוברת על כל אפקט.
+  </div>
+
+  <h3>צבע — קידוד, לא קישוט</h3>
+  <p>גוון לכל עולם פיננסי, כך שמבט חטוף על כל מסך אומר באיזה עולם אתה. שניים מהגוונים לקוחים מ-CBA במכוון, כדי שיהיה דמיון משפחתי בין שתי האפליקציות שלך.</p>
+
+  <div class="call ok">
+    <span class="h">למה ארבעה עולמות ולא חמישה</span>
+    בגרסה הקודמת השקעות היו אינדיגו וחסכונות סגול — שני גוונים במרחק 18° זה מזה, כלומר כמעט אותו צבע. הפתרון אינו סגול אחר: <strong>ירוק ואדום שמורים לכיוון הכסף</strong>, ולכן נשארת קשת צרה, וחמישה עולמות שרובם "קרים" פשוט לא נכנסים בה בלי שניים ייראו דומים. לכן <em>מזומן ותזרים</em> ו<em>הוצאות ואשראי</em> התאחדו לעולם אחד — מה שממילא קורה בפועל, כי מסך התזרים ומסך ההוצאות הם אותו מודול (סעיף 06). התוצאה: ארבעה גוונים עם מרחק מינימלי של <strong>51°</strong> ביניהם, כולם מובחנים בבירור. לוח הבקרה והשווי הנקי נשארים ניטרליים — פחם, בלי גוון — כי הם מסכי סיכום ולא עולם בפני עצמו.
+  </div>
+
+  <div class="sw">
+    <div class="swi"><span class="chip" style="background:#4F46E5"></span><div class="lbl">השקעות</div><div class="hex">#4F46E5 · 243°</div></div>
+    <div class="swi"><span class="chip" style="background:#DB2777"></span><div class="lbl">תזרים והוצאות</div><div class="hex">#DB2777 · 333°</div></div>
+    <div class="swi"><span class="chip" style="background:#D97706"></span><div class="lbl">הלוואות וחוב</div><div class="hex">#D97706 · 32° · מ-CBA</div></div>
+    <div class="swi"><span class="chip" style="background:#0891B2"></span><div class="lbl">חסכונות ופנסיה</div><div class="hex">#0891B2 · 192° · מ-CBA</div></div>
+    <div class="swi"><span class="chip" style="background:#D9FF00"></span><div class="lbl">דורש תשומת לב</div><div class="hex">#D9FF00 · קיים</div></div>
+  </div>
+
+  <p>ארבעה כללים שמונעים מזה להפוך לקרנבל:</p>
+  <ol>
+    <li><strong>הגוון מופיע רק על הפעיל.</strong> ישירות מ-iOS 27: פריט ניווט לא־פעיל הוא אפור; ברגע שהוא נבחר הוא מקבל את גוון העולם שלו. אותו כלל חל על כותרת המסך ועל הגרפים שבו.</li>
+    <li><strong>ירוק ואדום שמורים לכיוון הכסף בלבד</strong> — רווח/הפסד, הכנסה/הוצאה. לעולם לא לניווט, לא לקטגוריה, לא למצב ממשק. זו הסיבה שקשת הגוונים צרה, וזה שווה את המחיר.</li>
+    <li><strong>הצהוב הניאון נשאר טוקן אחד:</strong> "דורש את תשומת לבך" — מיקוד מקלדת, התראה פתוחה, חריגה. הוא לא צבע של עולם.</li>
+    <li><strong>שלוש עוצמות לכל גוון:</strong> קו ואייקון במלא, רקע צ'יפ ב-10% אטימות, ומילוי גרף. אף פעם לא כרקע של שטח גדול. וכל קידוד צבע מלווה בתווית או בצורה — עיוורון צבעים אדום־ירוק הוא 8% מהגברים.</li>
+  </ol>
+
+  <h3>ביצועים, נגישות ומצב כהה</h3>
+  <ul>
+    <li><strong>לכל היותר שלושה משטחי זכוכית גלויים בו־זמנית.</strong> <code>backdrop-filter</code> הוא הגורם מספר אחת לגמגום ב-Safari מובייל.</li>
+    <li><strong>לעולם לא זכוכית על רשימה נגללת</strong> או על מכל של טבלה — הדפדפן מחשב מחדש את הטשטוש בכל פריים.</li>
+    <li><strong>שלוש נפילות חיננות:</strong> <code>@supports not (backdrop-filter: blur(1px))</code>, <code>prefers-reduced-transparency</code>, ו-<code>prefers-contrast: more</code> — כולן מובילות לרקע אטום. הממשק חייב להיות שלם גם בלי האפקט.</li>
+    <li><strong>בדיקה על אייפון אמיתי</strong>, לא בסימולטור. זה המקום היחיד שבו הבעיה מתגלה.</li>
+    <li><strong>מצב כהה:</strong> הטוקנים נבנים מוכנים לזה בשלב 1, המימוש בפועל בשלב 6 — כפי שהוכרע.</li>
+  </ul>
+</section>
+
+<!-- ══════════ 12 ══════════ -->
+<section id="s12">
+  <h2><span class="num">12</span>שכבת AI</h2>
+  <p class="lead">שבע הצעות, מדורגות לפי ערך חלקי מאמץ. כולן הצעות לאישור, לא מימוש. כל פלט AI ניתן לעריכה ואף פעם לא נשמר אוטומטית.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:6%">#</th><th style="width:26%">מה</th><th style="width:12%">מאמץ</th><th>למה זה שווה</th></tr></thead>
+      <tbody>
+        <tr><td class="n">1</td><td><strong>סיווג אוטומטי של הוצאות</strong></td><td><span class="pill part">בינוני</span></td><td>קטגוריה מוצעת לכל הוצאה שאף כלל לא תפס, שהופכת לכלל ברגע שאישרת. בלי זה מודול ההוצאות דורש עבודה ידנית שתיזנח אחרי חודש — וזו הסיבה מספר אחת שאפליקציות תקציב ננטשות.</td></tr>
+        <tr><td class="n">2</td><td><strong>סריקת פירוטי אשראי ודוחות ברוקר</strong></td><td><span class="pill have">נמוך</span></td><td>ב-CBA כבר בנוי בדיוק זה עבור קבלות, כולל טיפול בשגיאות. הקוד כמעט זהה — רק הפרומפט משתנה. רשת הביטחון לכל פורמט שאין לו פרסר.</td></tr>
+        <tr><td class="n">3</td><td><strong>חילוץ תזה מטקסט חופשי</strong></td><td><span class="pill have">נמוך</span></td><td>אתה כותב פסקה כמו שאתה חושב; ה-AI מפרק לשדות — קטליזטורים, מה יפריך, אופק, ביטחון. מוריד את החיכוך שבגללו יומני מחקר ננטשים.</td></tr>
+        <tr><td class="n">4</td><td><strong>התראות מבוססות כללים</strong></td><td><span class="pill have">נמוך</span></td><td>"פוזיציה חרגה מ-25% מהתיק", "מנוי חדש זוהה", "קטגוריה חרגה מהתקציב", "תנאי ההפרכה של תזה התקיים". לא AI בכלל — כללים על הנתונים. הכי זול, אולי הכי שימושי.</td></tr>
+        <tr><td class="n">5</td><td><strong>עוזר תחקור</strong></td><td><span class="pill part">בינוני</span></td><td>"למה ההוצאה שלי החודש גבוהה?" או "למה התשואה ברבעון נמוכה?" — תשובה שמחושבת מהנתונים ומקושרת לתנועות שיצרו אותה.</td></tr>
+        <tr><td class="n">6</td><td><strong>נירמול שמות סוחרים</strong></td><td><span class="pill have">נמוך</span></td><td>מכה ראשונה על טבלת הסוחרים הריקה: ה-AI מציע שם מוצג לכל תבנית גולמית, אתה מאשר בבת אחת, והטבלה מתמלאת ביום אחד במקום בחצי שנה.</td></tr>
+        <tr><td class="n">7</td><td><strong>תחקיר רבעוני</strong></td><td><span class="pill part">בינוני</span></td><td>ניסוח מסקנות מהמדדים של סעיפים 05 ו-06, פעם ברבעון. מייצר את ההרגל שהיומן קיים בשבילו.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call bad">
+    <span class="h">שלושה כללים שלא נשברים</span>
+    המפתח יושב ב-Script Properties של הפרויקט בחשבון הפרטי שלך, לעולם לא בריפו הציבורי. שום פלט AI לא נכתב לגיליון בלי אישור מפורש. ומספר לא מגיע ממודל שפה — הוא מגיע מהמנוע, וה-AI רק מנסח אותו.
+  </div>
+</section>
+
+<!-- ══════════ 13 ══════════ -->
+<section id="s13">
+  <h2><span class="num">13</span>החלטות</h2>
+  <p class="lead">כל ההחלטות סגורות. אין שאלות פתוחות — המסמך מוכן להפוך לקוד. שאלה אחת נדחתה במכוון לאפיון ייעודי, וזה עצמו החלטה.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:20%">נושא</th><th style="width:26%">ההחלטה</th><th>מה זה משנה בפועל</th></tr></thead>
+      <tbody>
+        <tr><td><strong>אבטחת הנתונים</strong></td><td><b>כניסת Google + מושב חתום</b></td><td>הסבה של המנגנון מ-CBA. מנטרל את הממצא החמור ביותר. שלב 1.</td></tr>
+        <tr><td><strong>כתיבה מהאפליקציה</strong></td><td><b>כתיבה מלאה</b></td><td><code>doPost</code> + תור אופליין. זה מה שפותח את כל שאר הסעיפים. שלב 2.</td></tr>
+        <tr><td><strong>איפה הנתונים</strong></td><td><b>אותו גיליון, טאבים נוספים</b></td><td>קריאה אחת, גיבוי אחד, הרשאה אחת.</td></tr>
+        <tr><td><strong>שערים היסטוריים</strong></td><td><b>ייבוא חד־פעמי</b></td><td><code>=GOOGLEFINANCE("CURRENCY:USDILS","close",DATE(2020,1,1),TODAY(),"DAILY")</code> ממלא את כל ההיסטוריה בנוסחה אחת. <b>הטאב <code>USD_ILS</code> כבר קיים</b> — מרחיבים אותו לטבלה במקום ליצור חדש. מדד המחירים לצרכן <em>אינו</em> זמין שם — נדרש מקור נפרד, ורק אם תרצה לעקוב אחרי הלוואה צמודה.</td></tr>
+        <tr><td><strong>חסכונות והגדרות</strong></td><td><b>חסכונות נשאר, הגדרות יורד</b></td><td>חסכונות מקבל תוכן מלא (סעיף 09). ההגדרות ממילא עוברות לגיליון.</td></tr>
+        <tr><td><strong>כיוון העיצוב</strong></td><td><b>כיוון A + iOS 27</b></td><td>רייל כהה נשמר, זכוכית נוזלית מעליו, סולם רדיוסים עגול יותר, וגוון עולם על הפריט הפעיל בלבד. סעיף 11.</td></tr>
+        <tr><td><strong>תשלומים — תצוגת ברירת מחדל</strong></td><td><b>לפי מועד הקנייה</b></td><td>המסך פותח את מה שקנית ומה זה עלה בסך הכול, לא את הפירור החודשי. ראה הסתייגות למטה — היא חשובה.</td></tr>
+        <tr><td><strong>קליטת אשראי</strong></td><td><b>תיקיית Drive בלבד</b></td><td>בלי גישת Gmail. אתה מוריד ומשליך לתיקייה.</td></tr>
+        <tr><td><strong>יומן המחקר</strong></td><td><b>טאבים בגיליון בשלב 2</b></td><td>מתחילים לכתוב ידנית. אם אחרי חודש אתה עדיין כותב — זה מצדיק מסך. אם לא — חסכת מסך.</td></tr>
+        <tr><td><strong>מצב כהה</strong></td><td><b>טוקנים עכשיו, מימוש בשלב 6</b></td><td>העלות של הדחייה קרובה לאפס אם הטוקנים נכונים מההתחלה.</td></tr>
+        <tr><td><strong>אפיון הקליטה</strong></td><td><b>נדחה בכוונה לסבב נפרד</b></td><td>שמונה השאלות מוגדרות בסעיף 07. הן ייענו מול הקבצים האמיתיים שלך פתוחים, בתחילת שלב 4.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="call warn">
+    <span class="h">הסתייגות אחת להחלטת התשלומים — ולמה היא לא סותרת אותה</span>
+    תצוגה לפי מועד קנייה עונה נכון על "על מה שילמתי", אבל היא <strong>לא</strong> עונה על "כמה יצא לי מהחשבון החודש" — קנייה ב-12 תשלומים תופיע במלואה בחודש הקנייה, ובחודשים הבאים לא תופיע בכלל. לכן:
+    <ul style="margin-top:8px">
+      <li><strong>מסך ההוצאות</strong> — ברירת מחדל לפי קנייה, כפי שהחלטת, עם מתג למעבר לחיוב.</li>
+      <li><strong>מסכי התזרים, הנזילות והשווי הנקי</strong> — <em>תמיד</em> לפי חיוב, כי זה מה שבאמת יוצא מהחשבון. אין שם מתג.</li>
+      <li><strong>מספר שלישי שנגזר משניהם:</strong> "התחייבות פתוחה" — כמה מקניות העבר עדיין ממתין לחיוב בחודשים הבאים. זה המספר שמגשר בין שתי התצוגות, ובלעדיו כל אחת מהן מטעה לבד.</li>
+    </ul>
+    כל מסך יסמן במפורש על איזה בסיס הוא מציג. שני המספרים נכונים; מספר בלי תווית הוא זה שמטעה.
+  </div>
+</section>
+
+<!-- ══════════ 14 ══════════ -->
+<section id="s14">
+  <h2><span class="num">14</span>תוכנית פיתוח</h2>
+  <p class="lead">שבעה שלבים. כל שלב נסגר בעצמו ומשאיר אפליקציה עובדת. "סבב" = מפגש עבודה אחד מול הקוד.</p>
+
+  <div class="phase now">
+    <div class="ph"><span class="pn">שלב 0</span><span class="pt">ניקיון ותשתית</span><span class="pw">סבב אחד</span></div>
+    <ul>
+      <li>להעלות את קוד ה-Apps Script לתיקיית <code>apps-script/</code> בריפו</li>
+      <li>לכתוב <code>README.md</code> ו-<code>CLAUDE.md</code> — מה האפליקציה, מה המבנה, מה הכללים</li>
+      <li>למזג או למחוק ארבעה ענפים ולנקות את <code>.claude/worktrees</code></li>
+      <li>להסיר "הגדרות" מהתפריט</li>
+      <li><strong>לארכב את ארבע הפריסות שאינן בשימוש</strong> — כל אחת מהן היא היום כתובת ציבורית נוספת לאותם נתונים</li>
+    </ul>
+    <div class="out"><b>מה זה פותח:</b> כל שיחה הבאה מתחילה עם ידיעה במקום גילוי. <b>מדד:</b> מישהו שרואה את הריפו לראשונה מבין תוך חמש דקות מה קורה בו, ויש בדיוק כתובת <code>/exec</code> אחת חיה.</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 1</span><span class="pt">אבטחה, רכיבים ושפת עיצוב</span><span class="pw">3–4 סבבים</span></div>
+    <ul>
+      <li>כניסת Google + מושב חתום, בהסבה מ-CBA</li>
+      <li><code>ui.js</code>, <code>skel.js</code>, <code>money.js</code> — הרכיבים המשותפים</li>
+      <li>שכבת הזכוכית והצבע בסגנון iOS 27 (סעיף 11) — סולם רדיוסים, שתי שכבות גבול, גוון על הפעיל בלבד, וטוקנים מוכנים למצב כהה</li>
+      <li>ארבעת מצבי המסך בכל חמשת הדפים הקיימים, ותיקון הטעינה הראשונה (שליפת היסטוריה מרוכזת במקום קריאה לטאב)</li>
+      <li>חיבור עמודות <code>Commission</code> ו-<code>Fees</code> ל-Classifier — תיקון בן שורות ספורות שמשלים את עלות החיכוך</li>
+    </ul>
+    <div class="out"><b>למה העיצוב כאן ולא בסוף:</b> אחרי השלב הזה ייבנו ארבעה מסכים חדשים. אם שפת העיצוב מגיעה אחריהם, כולם ייכתבו פעמיים. <b>מדד:</b> מסך ראשון תוך שנייה, ואף אחד חוץ ממך לא רואה את הנתונים.</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 2</span><span class="pt">כתיבה ובסיס הנתונים</span><span class="pw">2–3 סבבים</span></div>
+    <ul>
+      <li><code>doPost</code> עם אימות ועם <code>LockService</code> — היום אין נעילה בקוד, וכתיבה בלעדיה תדרוס את עצמה</li>
+      <li>תור כתיבות בצד הלקוח</li>
+      <li>הרחבת <code>Protfolios</code> לישות "חשבונות" מלאה, והמרת <code>Portfolio</code> ממחרוזת למפתח</li>
+      <li>יצירת טאב <code>Symbols</code> שה-<code>CFG</code> כבר מצפה לו — סקטור וסוג נכס לכל טיקר</li>
+      <li>הרחבת <code>USD_ILS</code> לטבלה היסטורית + ייבוא ב-<code>GOOGLEFINANCE</code></li>
+      <li>פתיחת טאבי התזות/החלטות/שיטות להזנה ידנית</li>
+    </ul>
+    <div class="out"><b>מה זה פותח:</b> כל שאר האפיון. <b>מדד:</b> אתה מזין תנועה מהנייד והיא בגיליון תוך שתי שניות.</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 3</span><span class="pt">מחקר ותחקור השקעות</span><span class="pw">3–4 סבבים</span></div>
+    <ul>
+      <li>מנוע התחקור — שבעת המדדים שאינם דורשים נתונים חדשים</li>
+      <li>השוואה למדד ייחוס ומבחן המכירה המוקדמת</li>
+      <li>צלילה מכל מספר עד לתנועה</li>
+      <li>מסך יומן מחקר (אם הוכרע בהחלטה 4)</li>
+    </ul>
+    <div class="out"><b>למה זה לפני ההוצאות:</b> שבעה מתשעת המדדים רצים על נתונים שכבר קיימים — זה הערך הזול ביותר בכל התוכנית. <b>הערה:</b> שלבים 3 ו-4 אינם תלויים זה בזה; אם ההוצאות דוחקות יותר, אפשר להחליף ביניהם בלי עלות.</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 4</span><span class="pt">קליטה, הוצאות ואשראי</span><span class="pw">5–6 סבבים</span></div>
+    <ul>
+      <li><strong>סבב אפיון קליטה</strong> — שמונה השאלות של סעיף 07, מול הקבצים האמיתיים</li>
+      <li>תיקיית Drive + פרסר לכל מקור (דוחות ברוקר ופירוטי אשראי) + טבלת "אשראי"</li>
+      <li>טבלת סוחרים, נירמול, וארבע שכבות הסיווג</li>
+      <li>טיפול בתשלומים, זיכויים, כפילות בנק־אשראי ומט"ח</li>
+      <li>מסך ההוצאות: תזרים כמספר ראשי, קבוע מול משתנה, תחזית לסוף החודש, חתכים, חריגות, מנויים</li>
+      <li>תקציב — מתוכנן מול בפועל</li>
+    </ul>
+    <div class="out"><b>מה זה פותח:</b> תחקור הוצאות מלא. <b>מדד:</b> אתה גורר קובץ אחד בחודש ומקבל תשובה על "לאן הלך הכסף" בלי לגעת בגיליון.</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 5</span><span class="pt">התחייבויות, צבירה ושווי נקי</span><span class="pw">3 סבבים</span></div>
+    <ul>
+      <li>הלוואות ולוח סילוקין, כולל סימולציית פירעון מוקדם</li>
+      <li>מסך חסכונות — פיקדונות, השתלמות, גמל, פנסיה, נזילות</li>
+      <li>חישוב עלות דמי הניהול עד הפרישה</li>
+      <li>מסך שווי נקי מאוחד על ציר זמן</li>
+    </ul>
+    <div class="out"><b>מה זה פותח:</b> התמונה הפיננסית המלאה. <b>מדד:</b> יש מסך אחד שעונה על "כמה כסף יש לי, וכמה ממנו באמת שלי".</div>
+  </div>
+
+  <div class="phase">
+    <div class="ph"><span class="pn">שלב 6</span><span class="pt">ליטוש והרחבה</span><span class="pw">2–3 סבבים</span></div>
+    <ul>
+      <li>PWA — manifest, service worker, אייקון</li>
+      <li>חיפוש גלובלי</li>
+      <li>מצב כהה</li>
+      <li>שכבת ה-AI המלאה והתראות מבוססות כללים</li>
+    </ul>
+    <div class="out"><b>מה זה פותח:</b> שימוש יומיומי מהנייד. <b>מדד:</b> האפליקציה על מסך הבית ואתה פותח אותה בלי לחשוב.</div>
+  </div>
+</section>
+
+<!-- ══════════ 15 ══════════ -->
+<section id="s15">
+  <h2><span class="num">15</span>מה לא נעשה</h2>
+  <p class="lead">הרשימה הזאת חשובה כמו כל השאר. היא מונעת חזרה לאותה שאלה בעוד חודשיים.</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th style="width:32%">מה נדחה</th><th>למה</th></tr></thead>
+      <tbody>
+        <tr><td><strong>מעבר ל-React או לכל מסגרת</strong></td><td>המבנה הנוכחי עובד, אין בו חוב שמצדיק את זה, וזה שובר את כלל "בלי התקנות בטרמינל". השכבה שחסרה היא רכיבים משותפים — לא מסגרת. גם שפת העיצוב החדשה היא CSS בלבד.</td></tr>
+        <tr><td><strong>שרת או דאטהבייס בתשלום</strong></td><td>Sheets + Apps Script מספיקים בהיקף הזה בסדר גודל. CBA מריצה עליהם אפליקציה גדולה פי חמישה.</td></tr>
+        <tr><td><strong>גרידה אוטומטית מהבנק</strong><br><span style="font-size:13px;color:var(--mut)">israeli-bank-scrapers</span></td><td>דורש Node ו-Puppeteer על מכונה שרצה, ומחייב לאחסן את פרטי הכניסה לבנק. שובר את הסטאק ואת כלל הסודות. חוזר לשולחן רק אם יהיה שרת קטן משלך.</td></tr>
+        <tr><td><strong>קליטה אוטומטית מ-Gmail</strong></td><td>נותנת לסקריפט גישת קריאה לתיבה. החיסכון בנוחות הוא גרירת קובץ פעם בחודש. <b>הוכרע: לא.</b></td></tr>
+        <tr><td><strong>שמירת מספר כרטיס מלא</strong></td><td>ארבע ספרות אחרונות מספיקות לזהות כרטיס. מספר מלא בגיליון הוא סיכון בלי תמורה.</td></tr>
+        <tr><td><strong>ביצוע פעולות מסחר</strong></td><td>האפליקציה מתעדת ומתחקרת. היא לא קונה ולא מוכרת, ולא תחזיק מפתחות שמאפשרים זאת.</td></tr>
+        <tr><td><strong>ריבוי משתמשים והרשאות</strong></td><td>משתמש אחד. מודל המידור של CBA לא נחוץ כאן, ולהוסיף אותו "ליתר ביטחון" זה לשלם מורכבות על משהו שלא קיים.</td></tr>
+        <tr><td><strong>המלצות השקעה מה-AI</strong></td><td>שכבת ה-AI מנסחת ומחלצת. היא לא אומרת מה לקנות — כי זה הופך כלי תחקור לכלי שמחליף את השיפוט שהוא נועד לשפר.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <hr>
+
+  <h3>הצעד הבא</h3>
+  <ol>
+    <li><strong>לענות על חמש ההחלטות הפתוחות בסעיף 11.</strong> החשובה בהן היא כיוון העיצוב, כי היא משפיעה על כל מה שנבנה משלב 1 והלאה.</li>
+    <li><strong>לבדוק מה מוגדר ב-Deploy תחת "Who has access"</strong> ולהגיד לי — זה קובע כמה דחוף שלב 1.</li>
+    <li><strong>להעתיק לכאן את קוד ה-Apps Script.</strong> אני מכניס אותו לריפו וכותב את שני קבצי התיעוד — זה שלב 0 כולו, בסבב אחד.</li>
+  </ol>
+</section>
+
+<footer>
+  מסמך אפיון FinanceAPP · גרסה 3.1 · 2 בספטמבר 2026<br>
+  נכתב על בסיס קריאה של קוד <code>main</code> (קומיט <code>2f5c026</code>), בדיקה חיה של האפליקציה ב-GitHub&nbsp;Pages, קריאה ישירה של גיליון <code>StocksData</code> ושל פרויקט ה-Apps Script <span dir="rtl">"בניית גליון היסטוריה למניה"</span>, וניתוח של CBA-Community-Budget-App כולל שכבת <code>motion.css</code>.
+</footer>
+
+</main>
+</div>
+</div>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav.toc a'));
+  var map = {};
+  links.forEach(function(a){
+    var el = document.querySelector(a.getAttribute('href'));
+    if (el) map[el.id] = a;
+  });
+  var ids = Object.keys(map);
+  if (!ids.length || !('IntersectionObserver' in window)) return;
+
+  var visible = {};
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ visible[e.target.id] = e.isIntersecting ? e.intersectionRatio : 0; });
+    var best = null, bestV = -1;
+    ids.forEach(function(id){
+      var v = visible[id] || 0;
+      if (v > bestV) { bestV = v; best = id; }
+    });
+    links.forEach(function(a){ a.classList.remove('on'); });
+    if (best && bestV > 0) map[best].classList.add('on');
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: [0, 0.05, 0.2, 0.5, 1] });
+
+  ids.forEach(function(id){ io.observe(document.getElementById(id)); });
+})();
+</script>
+
+</body>
+</html>
