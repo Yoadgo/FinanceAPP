@@ -9,6 +9,8 @@ const DataService = (() => {
   const LS_KEY_TXN   = 'fapp_txn_v1';  // bump version string to bust stale schema
   let _cache = {};
   let _lastFetch = {};
+  /* נדלק פעם אחת אם השרת עוד לא מכיר את resource=histories. ר' getStockHistories. */
+  let _noBatchHistories = false;
 
   /* ---- Core fetch (follows Google's redirect) ----
      כל בקשה נושאת את המושב אם יש. השרת מתעלם ממנו כל עוד המתג שם כבוי,
@@ -64,6 +66,56 @@ const DataService = (() => {
     if (text.trim().startsWith("<")) throw new Error("Received HTML — check Apps Script permissions.");
     const data = JSON.parse(text);
     if (data.ok === false) throw new Error(data.error || "unauthorized");
+    return data;
+  }
+
+  /* ---- כתיבה ----
+     שלוש החלטות שנראות שרירותיות ואינן:
+
+     1. **`text/plain` ולא `application/json`.** כותרת JSON הופכת את הבקשה
+        ל-preflighted, הדפדפן שולח OPTIONS, ו-Apps Script לא יודע לענות על
+        OPTIONS — הבקשה נכשלת לפני שהיא מגיעה לקוד. הגוף הוא JSON כמחרוזת.
+     2. **`writeId` שנוצר כאן.** ניסיון חוזר אחרי שגיאת רשת — כשהכתיבה
+        בעצם הצליחה — מחזיר את התוצאה המקורית במקום ליצור רשומה שנייה.
+        המזהה נוצר פעם אחת לכל קריאה **מחוץ** ללולאת הניסיונות.
+     3. **כתיבה תמיד דורשת מושב**, גם כשמתג האימות בשרת כבוי. `unauthorized`
+        על כתיבה מעלה את שער הכניסה בדיוק כמו על קריאה.                    */
+  function _writeId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'w-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  async function post(action, payload = {}, opts = {}) {
+    const body = {
+      ...payload,
+      action,
+      writeId: opts.writeId || _writeId(),
+      session: (window.FA && FA.session) ? FA.session.get() : null
+    };
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body)
+    });
+    const text = await res.text();
+    if (text.trim().startsWith("<")) throw new Error("Received HTML — check Apps Script permissions.");
+    const data = JSON.parse(text);
+
+    if (data.ok === false) {
+      const msg = data.error || "API Error";
+      if (/unauthorized/i.test(msg)) {
+        if (window.FA && FA.session) {
+          FA.session.clear();
+          if (!FA.session.isOpen()) FA.session.open(function () {});
+        }
+        const e = new Error("unauthorized"); e.unauthorized = true; e.writeId = body.writeId; throw e;
+      }
+      const e = new Error(msg); e.writeId = body.writeId; throw e;
+    }
+    // כתיבה משנה נתונים בשרת — המטמון המקומי כבר לא נאמן.
+    if (action.indexOf(".list") === -1) clearCache();
     return data;
   }
 
@@ -169,6 +221,67 @@ const DataService = (() => {
     return rows;
   }
 
+  /* ---- היסטוריה מרובה ----
+     **הנחה שנבדקה בייצור והתבררה כשגויה, ולכן היא מתועדת כאן.**
+     ההנחה הייתה שמספר הקריאות הוא המדד ולכן קריאה מרוכזת אחת תוריד את
+     הגרף מ-30 שניות ל-3. המדידה בפועל:
+       • 4 ניירות  → 6.0 שניות, עובד
+       • 10 ניירות → 18.3 שניות, **נכשל** — גוגל מחזירה דף שגיאה
+       • 27 ניירות → נכשל
+     כלומר לקריאה יש גם עלות **לפי כמות** (~1.5–1.8 שניות לנייר: קריאת
+     ~1,250 שורות מכל טאב H_ ועיבודן), ומעליה מגבלת זמן לבקשת web app.
+     צוואר הבקבוק האמיתי הוא מבנה טאב-לכל-נייר — בדיוק מה שהאפיון סימן
+     כשורש הבעיה. תיקון אמיתי דורש מטמון מחושב מראש, לא איגוד קריאות.
+
+     לכן: הקריאה המרוכזת משמשת רק לקבוצות קטנות, ובכל כישלון — מכל סוג —
+     נופלים לקריאות בודדות. לוח הבקרה (27 ניירות) עובר בנתיב הבודד
+     המוכח, ולא מקבל רגרסיה.                                              */
+  var BATCH_MAX = 6;
+  async function getStockHistories(symbols) {
+    const now = Date.now();
+    const want = [...new Set((symbols || [])
+      .map(s => String(s || "").trim().toUpperCase())
+      .filter(Boolean))];
+
+    const out = {};
+    const missing = [];
+    want.forEach(sym => {
+      const k = `history_${sym}`;
+      if (_cache[k] && (now - _lastFetch[k]) < CACHE_TTL) out[sym] = _cache[k];
+      else missing.push(sym);
+    });
+    if (!missing.length) return out;
+
+    /* הקריאה המרוכזת נוסתה רק כשהיא בטוחה. כישלון **מכל סוג** מפיל אותה
+       לנתיב הבודד: שרת שעוד לא נפרס עונה "Unknown resource", ושרת עמוס
+       מחזיר דף HTML של גוגל — שניהם חייבים להיגמר בגרף מצויר ולא בשגיאה.
+       `unauthorized` הוא היוצא מן הכלל היחיד: הוא חייב להמשיך למעלה,
+       אחרת שער הכניסה לא יעלה.
+       הדגל נשמר, כך שאחרי כישלון אחד לא מנסים שוב בכל טעינה.            */
+    if (!_noBatchHistories && missing.length <= BATCH_MAX) {
+      try {
+        const data = await _fetch({ resource: "histories", symbols: missing.join(",") });
+        const series = data.series || {};
+        missing.forEach(sym => {
+          const entry = series[sym];
+          const rows = entry && Array.isArray(entry.rows) ? entry.rows : [];
+          out[sym] = rows;
+          _cache[`history_${sym}`] = rows;
+          _lastFetch[`history_${sym}`] = now;
+        });
+        return out;
+      } catch (err) {
+        if (err && err.unauthorized) throw err;
+        _noBatchHistories = true;
+      }
+    }
+
+    await Promise.all(missing.map(async sym => {
+      try { out[sym] = await getStockHistory(sym); } catch (_) { out[sym] = []; }
+    }));
+    return out;
+  }
+
   /* ---- Public: clear cache ---- */
   function clearCache(key) {
     if (key) {
@@ -202,5 +315,6 @@ const DataService = (() => {
     return data;
   }
 
-  return { getHealth, getTransactions, getStockHistory, getFxRate, getRealTimeData, clearCache, login };
+  return { getHealth, getTransactions, getStockHistory, getStockHistories,
+           getFxRate, getRealTimeData, clearCache, login, post };
 })();

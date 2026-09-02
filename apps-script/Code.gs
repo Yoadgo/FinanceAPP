@@ -757,6 +757,499 @@ function getHistorySeries_(ss, symbol, opts) {
   return { symbol: sym, count: finalRows.length, rows: finalRows };
 }
 
+// =================== שכבת כתיבה (שלב 2) ===================
+/*
+  נתיב הכתיבה היחיד מהאפליקציה לגיליון.
+
+  שלושה עקרונות שקובעים את כל מה שלמטה:
+
+  1. **אותו שער, לא שער חדש.** `doPost` היא נקודת כניסה שנייה, ונקודת כניסה
+     שנייה היא בדיוק איך נוצרת דלת אחורית. לכן היא קוראת ל-`verifySession_`
+     — אותה פונקציה של הקריאה — ולא בודקת דבר בעצמה.
+     **הבדל אחד מכוון מהקריאה:** מתג `AUTH_REQUIRED` פותח *קריאה* בלבד.
+     כתיבה דורשת מושב תמיד, גם כשהמתג כבוי. הסיבה: המתג הוא רשת ביטחון
+     שנועדה למנוע מהאפליקציה להישבר, ואילו כתובת כתיבה פתוחה על URL ציבורי
+     היא איך שגיליון נמחק. `login` נשאר ציבורי גם כשהמתג כבוי, ולכן הלקוח
+     תמיד יכול להשיג מושב.
+
+  2. **מנעול על כל כתיבה.** ל-Apps Script אין טרנזקציות. שתי כתיבות
+     שרצות במקביל על אותו טווח = נתון שנעלם בשקט.
+
+  3. **אידמפוטנטיות.** כל כתיבה נושאת `writeId` שהלקוח מייצר. ניסיון חוזר
+     אחרי שגיאת רשת — כשהכתיבה בעצם הצליחה — מחזיר את התוצאה המקורית
+     במקום ליצור רשומה שנייה. הקבלה יושבת ב-CacheService (TTL טבעי,
+     בלי טאב נוסף), והתיעוד הקבוע יושב בטאב `Log` שכבר עובד.
+*/
+
+var WRITE = {
+  accountsSheet:  'Accounts',
+  legacyAccounts: 'Protfolios',   // שם עם שגיאת כתיב. נשאר במקומו — CFG וקוד קיים מפנים אליו.
+  researchSheet:  'ResearchNotes',
+  fxHistorySheet: 'USD_ILS_History',
+  lockMs: 20000,
+  receiptTtlSec: 21600            // 6 שעות
+};
+
+/* חשבונות — הטבלה מתוכננת מהיום לכל הסוגים, גם אם הממשק בשלב 2 מציג רק
+   תיקי השקעות. העלות היא עמודה אחת; החלופה היא מיגרציה על נתונים חיים בשלב 4. */
+var ACCOUNT_COLS  = ['Id', 'Name', 'Type', 'Currency', 'Institution', 'Last4', 'Status', 'Notes', 'UpdatedAt'];
+var ACCOUNT_TYPES = { brokerage: 1, bank: 1, card: 1, loan: 1, pension: 1 };
+
+/* ניירות — נכתב לטאב `Symbols` שכבר מוגדר ב-CFG וכבר לא קיים.
+   `getSymbolToGoogleMap_` מאתר עמודות לפי שם כותרת, ולכן עמודות נוספות
+   אינן שוברות אותו, ושורה בלי GoogleSymbol פשוט לא נכנסת למפה. */
+var INSTRUMENT_COLS = ['Symbol', 'GoogleSymbol', 'Name', 'Type', 'Currency', 'Sector', 'Status', 'Notes', 'UpdatedAt'];
+
+var RESEARCH_COLS = ['Id', 'Date', 'Symbol', 'Kind', 'Title', 'Body', 'Tags', 'UpdatedAt'];
+
+// ---------- תשתית ----------
+
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  var body;
+  try {
+    /* הלקוח שולח `text/plain` בכוונה. `application/json` הופך את הבקשה
+       ל-preflighted, הדפדפן שולח OPTIONS, ו-Apps Script לא יודע לענות
+       על OPTIONS — הבקשה נכשלת לפני שהיא מגיעה לקוד הזה. */
+    var raw = (e && e.postData && e.postData.contents) ? e.postData.contents : '{}';
+    body = JSON.parse(raw);
+  } catch (err) {
+    return jsonOut_({ ok: false, error: 'bad request body' });
+  }
+
+  var action = String((body && body.action) || '').trim().toLowerCase();
+  try {
+    var payload = writeApi_(action, body) || {};
+    payload.ok = true;
+    payload.action = action;
+    return jsonOut_(payload);
+  } catch (err) {
+    return jsonOut_({ ok: false, action: action, error: String(err && err.message ? err.message : err) });
+  }
+}
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(WRITE.lockMs)) throw new Error('busy');
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+/* חייבת להיקרא **בתוך** המנעול: אחרת שתי בקשות עם אותו writeId
+   יפספסו שתיהן את המטמון ויכתבו פעמיים. */
+function writeOnce_(writeId, fn) {
+  if (!writeId) throw new Error('missing writeId');
+  var cache = CacheService.getScriptCache();
+  var key = 'w:' + String(writeId);
+  var prior = null;
+  try { prior = cache.get(key); } catch (e) { prior = null; }
+  if (prior) {
+    var p = JSON.parse(prior);
+    p.replayed = true;
+    return p;
+  }
+  var result = fn() || {};
+  try { cache.put(key, JSON.stringify(result), WRITE.receiptTtlSec); } catch (e) {}
+  return result;
+}
+
+/* יצירה אידמפוטנטית: טאב נוצר רק אם חסר, עמודה נוספת רק אם חסרה,
+   וסדר העמודות הקיים לא משתנה. שורות נתונים לא נגעות לעולם. */
+function ensureSheetWithCols_(ss, name, cols) {
+  var sh = ss.getSheetByName(name);
+  var created = false;
+  if (!sh) { sh = ss.insertSheet(name); created = true; }
+
+  var headers = [];
+  if (sh.getLastRow() >= 1 && sh.getLastColumn() >= 1) {
+    headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+      .map(function (h) { return String(h || '').trim(); });
+    while (headers.length && headers[headers.length - 1] === '') headers.pop();
+  }
+
+  var added = [];
+  cols.forEach(function (c) {
+    if (headers.indexOf(c) === -1) { headers.push(c); added.push(c); }
+  });
+
+  if (added.length) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return { sheet: sh, headers: headers, added: added, created: created };
+}
+
+/* קריאת טבלה לאובייקטים לפי שם כותרת — כך שסדר העמודות בגיליון
+   לא מחייב את הקוד, וגם עמודה שיועד הוסיף ידנית שורדת. */
+function readTable_(sh) {
+  var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return { headers: [], rows: [] };
+  var values = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = values[0].map(function (h) { return String(h || '').trim(); });
+  var rows = [];
+  for (var r = 1; r < values.length; r++) {
+    var o = { _row: r + 1 };
+    var empty = true;
+    for (var c = 0; c < headers.length; c++) {
+      if (!headers[c]) continue;
+      o[headers[c]] = values[r][c];
+      if (String(values[r][c] || '').trim() !== '') empty = false;
+    }
+    if (!empty) rows.push(o);
+  }
+  return { headers: headers, rows: rows };
+}
+
+function writeRow_(sh, headers, rowIndex, obj) {
+  var line = headers.map(function (h) {
+    return Object.prototype.hasOwnProperty.call(obj, h) ? obj[h] : '';
+  });
+  sh.getRange(rowIndex, 1, 1, headers.length).setValues([line]);
+}
+
+function nowIso_() { return new Date().toISOString(); }
+
+// ---------- הנתב ----------
+
+function writeApi_(action, body) {
+  if (!action) throw new Error('missing action');
+
+  /* אותה בדיקה של הקריאה, בלי רשימת היתר. אין פעולת כתיבה ציבורית. */
+  if (!verifySession_(body.session)) throw new Error('unauthorized');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // קריאה בלבד — בלי מנעול ובלי writeId
+  if (action === 'accounts.list')    return { accounts:    listAccounts_(ss) };
+  if (action === 'instruments.list') return { instruments: listInstruments_(ss) };
+
+  return withLock_(function () {
+    return writeOnce_(body.writeId, function () {
+      var out;
+      if (action === 'accounts.upsert')       out = upsertAccount_(ss, body);
+      else if (action === 'accounts.rename')  out = renameAccount_(ss, body);
+      else if (action === 'accounts.archive') out = archiveAccount_(ss, body);
+      else if (action === 'instruments.upsert') out = upsertInstrument_(ss, body);
+      else if (action === 'instruments.archive') out = archiveInstrument_(ss, body);
+      else throw new Error('Unknown action: ' + action);
+
+      try { logEvent_(ss, 'write', 'WRITE', { action: action, writeId: body.writeId, result: out }, 'OK'); } catch (e) {}
+      return out;
+    });
+  });
+}
+
+// ---------- חשבונות ----------
+
+function accountsSheet_(ss) {
+  var e = ensureSheetWithCols_(ss, WRITE.accountsSheet, ACCOUNT_COLS);
+  migrateLegacyAccounts_(ss, e);
+  return e;
+}
+
+/* קליטה חד־פעמית מ-`Protfolios`. אידמפוטנטית: שם שכבר קיים ב-Accounts
+   לא נוצר שוב ולא נדרס. הטאב המקורי נשאר במקומו. */
+function migrateLegacyAccounts_(ss, e) {
+  var legacy = ss.getSheetByName(WRITE.legacyAccounts);
+  if (!legacy) return 0;
+
+  var have = {};
+  readTable_(e.sheet).rows.forEach(function (r) {
+    have[String(r.Name || '').trim().toLowerCase()] = true;
+  });
+
+  var added = 0;
+  readTable_(legacy).rows.forEach(function (r) {
+    var name = String(r.Portfolio || r.Name || '').trim();
+    if (!name || have[name.toLowerCase()]) return;
+    e.sheet.appendRow(objToLine_(e.headers, {
+      Id: Utilities.getUuid(),
+      Name: name,
+      Type: 'brokerage',
+      Currency: '',
+      Institution: '',
+      Last4: '',
+      Status: 'active',
+      Notes: 'נקלט אוטומטית מ-' + WRITE.legacyAccounts,
+      UpdatedAt: nowIso_()
+    }));
+    have[name.toLowerCase()] = true;
+    added++;
+  });
+  return added;
+}
+
+function objToLine_(headers, obj) {
+  return headers.map(function (h) {
+    return Object.prototype.hasOwnProperty.call(obj, h) ? obj[h] : '';
+  });
+}
+
+function listAccounts_(ss) {
+  var e = accountsSheet_(ss);
+  return readTable_(e.sheet).rows.map(function (r) {
+    return {
+      id: String(r.Id || ''), name: String(r.Name || ''), type: String(r.Type || ''),
+      currency: String(r.Currency || ''), institution: String(r.Institution || ''),
+      last4: String(r.Last4 || ''), status: String(r.Status || 'active'),
+      notes: String(r.Notes || '')
+    };
+  });
+}
+
+function upsertAccount_(ss, body) {
+  var e = accountsSheet_(ss);
+  var t = readTable_(e.sheet);
+
+  var name = String(body.name || '').trim();
+  var type = String(body.type || '').trim().toLowerCase();
+  if (!name) throw new Error('שם חשבון הוא שדה חובה');
+  if (!ACCOUNT_TYPES[type]) throw new Error('סוג חשבון לא מוכר: ' + type);
+
+  /* ארבע ספרות בלבד. מספר כרטיס מלא לא נשמר, גם אם נשלח. */
+  var last4 = String(body.last4 || '').replace(/\D/g, '');
+  if (last4.length > 4) last4 = last4.slice(-4);
+
+  var id = String(body.id || '').trim();
+  var existing = null;
+  for (var i = 0; i < t.rows.length; i++) {
+    if (id && String(t.rows[i].Id || '') === id) { existing = t.rows[i]; break; }
+  }
+
+  // שם כפול נדחה — הוא המפתח שהתנועות מפנות אליו.
+  for (var j = 0; j < t.rows.length; j++) {
+    var other = t.rows[j];
+    if (existing && other._row === existing._row) continue;
+    if (String(other.Name || '').trim().toLowerCase() === name.toLowerCase()) {
+      throw new Error('כבר קיים חשבון בשם "' + name + '"');
+    }
+  }
+
+  /* שינוי שם דרך upsert חסום בכוונה: השם הוא המפתח שאליו מפנות 1,326
+     שורות תנועות, ומפתח מנוע ה-FIFO הוא (portfolio, symbol). שינוי שם
+     בלי לכתוב מחדש את התנועות מוחק את ההיסטוריה בשקט. יש לזה פעולה
+     ייעודית — `accounts.rename` — שמראה מראש כמה שורות ישתנו. */
+  if (existing && String(existing.Name || '').trim() !== name) {
+    throw new Error('שינוי שם חשבון נעשה דרך accounts.rename בלבד');
+  }
+
+  var rec = {
+    Id: existing ? existing.Id : (id || Utilities.getUuid()),
+    Name: name,
+    Type: type,
+    Currency: String(body.currency || (existing ? existing.Currency : '') || ''),
+    Institution: String(body.institution || (existing ? existing.Institution : '') || ''),
+    Last4: last4 || (existing ? String(existing.Last4 || '') : ''),
+    Status: String(body.status || (existing ? existing.Status : '') || 'active'),
+    Notes: String(body.notes != null ? body.notes : (existing ? existing.Notes : '') || ''),
+    UpdatedAt: nowIso_()
+  };
+
+  if (existing) writeRow_(e.sheet, e.headers, existing._row, rec);
+  else e.sheet.appendRow(objToLine_(e.headers, rec));
+
+  return { id: rec.Id, created: !existing };
+}
+
+/* המלכודת המרכזית של השלב. בלי `confirm` זו תצוגה מקדימה בלבד. */
+function renameAccount_(ss, body) {
+  var e = accountsSheet_(ss);
+  var t = readTable_(e.sheet);
+
+  var id = String(body.id || '').trim();
+  var newName = String(body.newName || '').trim();
+  if (!id) throw new Error('missing id');
+  if (!newName) throw new Error('שם חדש הוא שדה חובה');
+
+  var row = null;
+  for (var i = 0; i < t.rows.length; i++) if (String(t.rows[i].Id || '') === id) { row = t.rows[i]; break; }
+  if (!row) throw new Error('חשבון לא נמצא');
+
+  var oldName = String(row.Name || '').trim();
+  if (oldName === newName) return { changed: 0, renamed: false, note: 'השם זהה' };
+
+  for (var j = 0; j < t.rows.length; j++) {
+    if (t.rows[j]._row === row._row) continue;
+    if (String(t.rows[j].Name || '').trim().toLowerCase() === newName.toLowerCase()) {
+      throw new Error('כבר קיים חשבון בשם "' + newName + '"');
+    }
+  }
+
+  var tx = ss.getSheetByName(CFG.transactionsSheet);
+  if (!tx) throw new Error('Missing sheet: ' + CFG.transactionsSheet);
+  var lastRow = tx.getLastRow(), lastCol = tx.getLastColumn();
+  var headers = tx.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h || '').trim(); });
+  var pIdx = headers.indexOf('Portfolio');
+  if (pIdx === -1) throw new Error('Transactions has no Portfolio column');
+
+  var colVals = lastRow > 1 ? tx.getRange(2, pIdx + 1, lastRow - 1, 1).getValues() : [];
+  var hits = [];
+  for (var k = 0; k < colVals.length; k++) {
+    if (String(colVals[k][0] || '').trim() === oldName) hits.push(k);
+  }
+
+  if (!body.confirm) {
+    return { preview: true, renamed: false, oldName: oldName, newName: newName, rowsAffected: hits.length };
+  }
+
+  // כתיבה אחת לכל העמודה, בתוך אותו מנעול שבו נכתבת שורת החשבון.
+  for (var m = 0; m < hits.length; m++) colVals[hits[m]][0] = newName;
+  if (colVals.length) tx.getRange(2, pIdx + 1, colVals.length, 1).setValues(colVals);
+
+  row.Name = newName;
+  row.UpdatedAt = nowIso_();
+  writeRow_(e.sheet, e.headers, row._row, row);
+
+  return { renamed: true, oldName: oldName, newName: newName, rowsAffected: hits.length };
+}
+
+/* אין מחיקה קשה לחשבון שיש לו תנועות — היא הופכת אותן ליתומות.
+   חשבון בלי תנועות נמחק; חשבון עם תנועות עובר לארכיון. */
+function archiveAccount_(ss, body) {
+  var e = accountsSheet_(ss);
+  var t = readTable_(e.sheet);
+  var id = String(body.id || '').trim();
+  if (!id) throw new Error('missing id');
+
+  var row = null;
+  for (var i = 0; i < t.rows.length; i++) if (String(t.rows[i].Id || '') === id) { row = t.rows[i]; break; }
+  if (!row) throw new Error('חשבון לא נמצא');
+
+  var name = String(row.Name || '').trim();
+  var refs = countPortfolioRefs_(ss, name);
+
+  if (refs === 0 && body.hard) {
+    e.sheet.deleteRow(row._row);
+    return { deleted: true, archived: false, rowsReferencing: 0 };
+  }
+
+  row.Status = 'archived';
+  row.UpdatedAt = nowIso_();
+  writeRow_(e.sheet, e.headers, row._row, row);
+  return { deleted: false, archived: true, rowsReferencing: refs };
+}
+
+function countPortfolioRefs_(ss, name) {
+  var tx = ss.getSheetByName(CFG.transactionsSheet);
+  if (!tx || tx.getLastRow() < 2) return 0;
+  var headers = tx.getRange(1, 1, 1, tx.getLastColumn()).getValues()[0].map(function (h) { return String(h || '').trim(); });
+  var pIdx = headers.indexOf('Portfolio');
+  if (pIdx === -1) return 0;
+  var vals = tx.getRange(2, pIdx + 1, tx.getLastRow() - 1, 1).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) if (String(vals[i][0] || '').trim() === name) n++;
+  return n;
+}
+
+// ---------- ניירות ----------
+
+function instrumentsSheet_(ss) {
+  return ensureSheetWithCols_(ss, CFG.symbolsSheet, INSTRUMENT_COLS);
+}
+
+function listInstruments_(ss) {
+  var e = instrumentsSheet_(ss);
+  return readTable_(e.sheet).rows.map(function (r) {
+    return {
+      symbol: String(r.Symbol || ''), googleSymbol: String(r.GoogleSymbol || ''),
+      name: String(r.Name || ''), type: String(r.Type || ''),
+      currency: String(r.Currency || ''), sector: String(r.Sector || ''),
+      status: String(r.Status || 'active'), notes: String(r.Notes || '')
+    };
+  });
+}
+
+function upsertInstrument_(ss, body) {
+  var e = instrumentsSheet_(ss);
+  var t = readTable_(e.sheet);
+
+  var symbol = String(body.symbol || '').trim().toUpperCase();
+  if (!symbol) throw new Error('סימבול הוא שדה חובה');
+  if (!isValidTicker_(symbol)) throw new Error('סימבול לא חוקי: ' + symbol);
+
+  /* GoogleSymbol שגוי גורם ל-buildRefreshAll למשוך היסטוריה של נייר אחר,
+     והתוצאה נראית תקינה לגמרי. לכן הוא נבדק כאן ולא רק בממשק. */
+  var google = String(body.googleSymbol || '').trim();
+  if (google && !/^[A-Za-z0-9.:\-]+$/.test(google)) throw new Error('GoogleSymbol לא חוקי: ' + google);
+
+  var existing = null;
+  for (var i = 0; i < t.rows.length; i++) {
+    if (String(t.rows[i].Symbol || '').trim().toUpperCase() === symbol) { existing = t.rows[i]; break; }
+  }
+
+  var rec = {
+    Symbol: symbol,
+    GoogleSymbol: google || (existing ? String(existing.GoogleSymbol || '') : ''),
+    Name: String(body.name != null ? body.name : (existing ? existing.Name : '') || ''),
+    Type: String(body.type != null ? body.type : (existing ? existing.Type : '') || ''),
+    Currency: String(body.currency != null ? body.currency : (existing ? existing.Currency : '') || ''),
+    Sector: String(body.sector != null ? body.sector : (existing ? existing.Sector : '') || ''),
+    Status: String(body.status || (existing ? existing.Status : '') || 'active'),
+    Notes: String(body.notes != null ? body.notes : (existing ? existing.Notes : '') || ''),
+    UpdatedAt: nowIso_()
+  };
+
+  if (existing) writeRow_(e.sheet, e.headers, existing._row, rec);
+  else e.sheet.appendRow(objToLine_(e.headers, rec));
+
+  return { symbol: symbol, created: !existing };
+}
+
+function archiveInstrument_(ss, body) {
+  var e = instrumentsSheet_(ss);
+  var t = readTable_(e.sheet);
+  var symbol = String(body.symbol || '').trim().toUpperCase();
+  if (!symbol) throw new Error('missing symbol');
+
+  for (var i = 0; i < t.rows.length; i++) {
+    if (String(t.rows[i].Symbol || '').trim().toUpperCase() === symbol) {
+      var row = t.rows[i];
+      row.Status = 'archived';
+      row.UpdatedAt = nowIso_();
+      writeRow_(e.sheet, e.headers, row._row, row);
+      return { symbol: symbol, archived: true };
+    }
+  }
+  throw new Error('נייר לא נמצא: ' + symbol);
+}
+
+// ---------- הרצה חד־פעמית מהעורך ----------
+
+/* יוצר את כל הטאבים של שלב 2 ומריץ את הקליטה מ-Protfolios.
+   בטוח להרצה חוזרת: שום שורה קיימת לא נדרסת ושום עמודה לא נמחקת. */
+function setupPhase2() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var a = accountsSheet_(ss);
+  var i = instrumentsSheet_(ss);
+  var r = ensureSheetWithCols_(ss, WRITE.researchSheet, RESEARCH_COLS);
+  var out = {
+    accounts:    { created: a.created, colsAdded: a.added, rows: readTable_(a.sheet).rows.length },
+    instruments: { created: i.created, colsAdded: i.added, rows: readTable_(i.sheet).rows.length },
+    research:    { created: r.created, colsAdded: r.added }
+  };
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/* היסטוריית שער דולר בנוסחה אחת, לטאב **נפרד**.
+   הטאב `USD_ILS` הקיים לא נגע: `getFxUsdIls_` קורא ממנו B2/A2, וכתיבה
+   לתוכו הייתה שוברת את שער החליפין החי בכל האפליקציה. */
+function importFxHistory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(WRITE.fxHistorySheet);
+  if (!sh) sh = ss.insertSheet(WRITE.fxHistorySheet);
+  if (sh.getLastRow() > 2) { Logger.log('כבר מאוכלס — לא נגעתי. שורות: ' + sh.getLastRow()); return { skipped: true, rows: sh.getLastRow() }; }
+  sh.getRange('A1').setFormula('=GOOGLEFINANCE("CURRENCY:USDILS","close",DATE(2020,1,1),TODAY(),"DAILY")');
+  SpreadsheetApp.flush();
+  Utilities.sleep(3000);
+  Logger.log('נכתב. שורות: ' + sh.getLastRow());
+  return { skipped: false, rows: sh.getLastRow() };
+}
+
 // =================== WEB API (for HTML) ===================
 // URL usage examples:
 // .../exec?resource=realtime
@@ -769,13 +1262,9 @@ function doGet(e) {
   try {
     const resource = (e && e.parameter && e.parameter.resource) ? String(e.parameter.resource) : "health";
     const payload = api_(resource, e && e.parameter ? e.parameter : {});
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true, resource, ...payload }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonOut_({ ok: true, resource, ...payload });
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: false, error: String(err && err.message ? err.message : err) }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
   }
 }
 
@@ -835,6 +1324,53 @@ function api_(resource, params) {
 
     const series = getHistorySeries_(ss, symbol, { from, to, limit });
     return { ...series };
+  }
+
+  // ===== BATCH ENDPOINTS =====
+  /* שתי הנקודות האלה קיימות מסיבה אחת: **מספר הקריאות הוא המדד, לא גודל
+     הנתונים.** נמדד בייצור — כל קריאה ל-Apps Script עולה ~2.5–3.4 שניות של
+     הלוך־חזור בלי קשר לכמות. לכן 27 קריאות היסטוריה = 30 שניות, ו-Promise.all
+     כמעט לא עוזר כי הבקשות מסודרות בתור. קריאה אחת מחזירה את כולן ב-~3. */
+
+  if (r === "histories") {
+    const raw = String(params.symbols || params.syms || "").trim();
+    if (!raw) throw new Error("histories requires symbols");
+    const list = raw.split(",")
+      .map(x => String(x || "").trim().toUpperCase())
+      .filter(x => x && isValidTicker_(x));
+    if (!list.length) throw new Error("histories: no valid symbols");
+    if (list.length > 60) throw new Error("histories: too many symbols (max 60)");
+
+    const from = params.from ? String(params.from) : "";
+    const to = params.to ? String(params.to) : "";
+    const limit = params.limit ? Number(params.limit) : CFG.historyDefaultLimit;
+
+    const series = {}, missing = [];
+    const seen = {};
+    list.forEach(sym => {
+      if (seen[sym]) return;
+      seen[sym] = true;
+      // נייר בלי טאב היסטוריה אינו שגיאה — הוא מדווח ב-missing והשאר נמסר.
+      try { series[sym] = getHistorySeries_(ss, sym, { from, to, limit }); }
+      catch (e) { missing.push(sym); }
+    });
+    return { series, missing, count: Object.keys(series).length };
+  }
+
+  if (r === "bootstrap") {
+    const out = {};
+    const txSh = ss.getSheetByName(CFG.transactionsSheet);
+    if (!txSh) throw new Error("Missing sheet: " + CFG.transactionsSheet);
+    out.transactions = { values: txSh.getDataRange().getValues() };
+
+    // מחירים חיים ושער — נחמדים אבל לא קריטיים. כישלון בהם לא מפיל את הטעינה.
+    try {
+      const rtSh = ss.getSheetByName(CFG.realtimeSheet);
+      out.realtime = rtSh ? { values: rtSh.getDataRange().getValues() } : null;
+    } catch (e) { out.realtime = null; }
+    try { out.fx = getFxUsdIls_(ss); } catch (e) { out.fx = null; }
+
+    return out;
   }
 
   throw new Error("Unknown resource: " + resource);

@@ -114,10 +114,9 @@ Pages.dashboard = (() => {
         .filter(r => r.category === 'STOCKS')
         .map(r => (r.Symbol || '').toString().trim().toUpperCase())
         .filter(s => /^[A-Z]{1,5}$/.test(s)))];
-      const historyMap = {};
-      await Promise.all(symbols.map(async s => {
-        try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
-      }));
+      let historyMap = {};
+      try { historyMap = await DataService.getStockHistories(symbols); }
+      catch (_) { historyMap = {}; }
       if (token !== _loadToken || !_state) return;
       _state.curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
       _state.curveLoading = false;
