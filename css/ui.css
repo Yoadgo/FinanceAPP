@@ -178,3 +178,60 @@
   font-size: 12.5px; color: var(--danger); font-weight: 600;
   margin-top: 12px; min-height: 17px;
 }
+
+/* ===== ניהול חשבונות (accounts.js) ===== */
+.fa-acc { width: min(560px, calc(100vw - 32px)); max-height: min(78vh, 720px);
+          display: flex; flex-direction: column; padding: 0; }
+.fa-acc__head { display: flex; align-items: center; justify-content: space-between;
+                gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid var(--border); }
+.fa-acc__head .fa-dlg__title { margin: 0; }
+.fa-acc__x { background: none; border: 0; font-size: 16px; line-height: 1; cursor: pointer;
+             color: var(--text-muted); padding: 6px; border-radius: var(--r-sm); }
+.fa-acc__x:hover { background: var(--bg-subtle); color: var(--text-primary); }
+.fa-acc__body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+.fa-acc__foot { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+                padding: 12px 20px 18px; border-top: 1px solid var(--border); }
+
+.fa-acc__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fa-acc__row { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+               border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-card); }
+.fa-acc__row.is-archived { opacity: .6; }
+.fa-acc__main { flex: 1; min-width: 0; }
+.fa-acc__name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.fa-acc__sub  { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.fa-acc__tag  { font-size: 11px; font-weight: 600; color: var(--text-muted);
+                border: 1px solid var(--border); border-radius: var(--r-xs); padding: 1px 6px; }
+
+.fa-acc__f { display: block; margin-bottom: 12px; }
+.fa-acc__f > span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+.fa-acc__in { width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; font-size: 14px;
+              color: var(--text-primary); background: var(--bg-subtle);
+              border: 1px solid var(--border); border-radius: var(--r-sm); }
+.fa-acc__in:focus { outline: none; border-color: var(--border-focus); background: var(--bg-card); }
+.fa-acc__ro { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+              padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary);
+              background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.fa-acc__err { color: var(--danger); font-size: 13px; min-height: 18px; }
+
+/* ===== חסכונות (savings.js) ===== */
+.sv-head { display: flex; align-items: flex-end; justify-content: space-between;
+           gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.sv-head__title { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+.sv-head__sub   { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.sv-grid { display: grid; gap: 12px; margin-bottom: 14px;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.sv-card__name { font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 2px 0; }
+.sv-card.is-archived { opacity: .6; }
+.sv-note { margin-top: 4px; }
+
+@media (max-width: 640px) {
+  .fa-acc__foot { justify-content: stretch; }
+  .fa-acc__foot .fa-btn { flex: 1; }
+  .sv-head { align-items: stretch; }
+  .sv-head .fa-btn { width: 100%; }
+}
+
+/* כפתור ניהול בתוך סרגל התיקים — נבדל מהפילטרים כדי שלא ייקרא כתיק נוסף */
+.pf-port-btn.pf-manage { margin-inline-start: auto; font-weight: 600;
+                         border-style: dashed; color: var(--text-muted); }
+.pf-port-btn.pf-manage:hover { color: var(--text-primary); border-style: solid; }

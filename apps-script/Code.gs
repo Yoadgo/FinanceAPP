@@ -1250,6 +1250,133 @@ function importFxHistory() {
   return { skipped: false, rows: sh.getLastRow() };
 }
 
+
+// =================== מטמון היסטוריה ===================
+/*
+  למה זה קיים — הממצא שהוביל לכאן, כדי שלא נחזור עליו:
+
+  ההנחה הייתה ש"מספר הקריאות הוא המדד" ולכן קריאה מרוכזת תפתור את 30
+  השניות של הגרף. נמדד מול הייצור והתברר כחלקי בלבד:
+      4 ניירות  →  6.0 שניות, עובד
+     10 ניירות  → 18.3 שניות, **נכשל**
+     27 ניירות  → נכשל
+  כלומר לקריאה יש גם עלות **לפי כמות**: ~1.5–1.8 שניות לנייר, כי כל טאב
+  H_ מכיל ~1,250 שורות שנקראות ומעובדות מחדש בכל טעינה. איגוד קריאות לא
+  נוגע בזה בכלל.
+
+  התיקון האמיתי הוא להזיז את העלות מנתיב הבקשה לעבודה לילית:
+  `buildHistoryCache` קוראת את כל הטאבים **פעם ביום** ומייצרת מחרוזת JSON
+  אחת מוכנה. הבקשה עצמה כבר לא קוראת 27 טאבים ולא מסדרת כלום — היא
+  מדביקה מחרוזות ומחזירה. זו הסיבה שהתשובה נמסרת גולמית ב-doGet ולא
+  עוברת דרך api_: רגע שבו מפרקים ומרכיבים מחדש 470 אלף תווים מחזיר בדיוק
+  את העלות שניסינו להעיף.
+
+  הפורמט דחוס בכוונה: { "AAPL": { "d":[ימים מאז 1.1.1970], "c":[מחירים] } }.
+  תאריך כמספר במקום "YYYY-MM-DD" חוסך שליש מהגודל, והלקוח ממיר בחזרה.
+*/
+
+var HCACHE = {
+  sheet: 'HistoryCache',
+  chunkChars: 45000,        // תא בגיליון מוגבל ל-50,000 תווים
+  pBuiltAt: 'HISTORY_CACHE_BUILT_AT',
+  pSymbols: 'HISTORY_CACHE_SYMBOLS',
+  pPoints:  'HISTORY_CACHE_POINTS',
+  budgetMs: 270000          // 4.5 דקות מתוך 6 — משאיר מקום לכתיבה
+};
+
+/* בונה את המטמון. מיועדת לטריגר יומי, ובטוחה גם להרצה ידנית.
+   אם הזמן נגמר לפני שכל הניירות עובדו — כותבת את מה שיש ומדווחת מי חסר,
+   כי מטמון חלקי עם רשימה כנה עדיף על כישלון שמשאיר מטמון ישן בלי שאיש ידע. */
+function buildHistoryCache() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var runId = newRunId_();
+  logRunStart_(ss, runId, 'buildHistoryCache');
+  var t0 = Date.now();
+
+  try {
+    var txSheet = ss.getSheetByName(CFG.transactionsSheet);
+    if (!txSheet) throw new Error('Missing sheet: ' + CFG.transactionsSheet);
+    var symbols = getSymbolsAndFirstBuyDateFromTransactions_(txSheet).symbols;
+
+    var parts = [], done = [], skipped = [], points = 0;
+    for (var i = 0; i < symbols.length; i++) {
+      if (Date.now() - t0 > HCACHE.budgetMs) { skipped = symbols.slice(i); break; }
+      var sym = symbols[i];
+      var series;
+      try { series = getHistorySeries_(ss, sym, { from: '', to: '', limit: CFG.historyDefaultLimit }); }
+      catch (e) { skipped.push(sym); continue; }
+
+      var rows = series.rows || [];
+      if (!rows.length) { skipped.push(sym); continue; }
+
+      /* כל נקודה נבדקת לפני שהיא נכנסת. הסיבה מעשית: המחרוזת הזו נמסרת
+         ללקוח **בלי parse בצד השרת**, ולכן ערך אחד לא תקין (NaN מתאריך
+         חריג, למשל) הופך את כל המטמון ל-JSON פסול — והתקלה תתגלה רק
+         אצל המשתמש. עדיף לדלג על נקודה מאשר להרעיל את הקובץ כולו. */
+      var d = [], c = [];
+      for (var k = 0; k < rows.length; k++) {
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(rows[k].date || ''));
+        if (!m) continue;
+        var day = Math.round(Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000);
+        var close = Number(rows[k].close);
+        if (!isFinite(day) || !isFinite(close)) continue;
+        d.push(day); c.push(close);
+      }
+      if (!d.length) { skipped.push(sym); continue; }
+
+      parts.push(JSON.stringify(sym) + ':{"d":[' + d.join(',') + '],"c":[' + c.join(',') + ']}');
+      done.push(sym);
+      points += d.length;
+    }
+
+    var blob = '{' + parts.join(',') + '}';
+
+    var sh = ss.getSheetByName(HCACHE.sheet);
+    if (!sh) sh = ss.insertSheet(HCACHE.sheet);
+    sh.clear();
+    sh.getRange(1, 1, 1, 2).setValues([['Idx', 'Chunk']]).setFontWeight('bold');
+    var chunks = [];
+    for (var o = 0; o < blob.length; o += HCACHE.chunkChars) {
+      chunks.push([chunks.length + 1, blob.substr(o, HCACHE.chunkChars)]);
+    }
+    if (chunks.length) sh.getRange(2, 1, chunks.length, 2).setValues(chunks);
+    sh.setFrozenRows(1);
+
+    var p = props_();
+    p.setProperty(HCACHE.pBuiltAt, new Date().toISOString());
+    p.setProperty(HCACHE.pSymbols, done.join(','));
+    p.setProperty(HCACHE.pPoints, String(points));
+
+    var out = { symbols: done.length, skipped: skipped, points: points, chars: blob.length, chunks: chunks.length, ms: Date.now() - t0 };
+    logRunEnd_(ss, runId, 'OK', out);
+    Logger.log(JSON.stringify(out, null, 2));
+    return out;
+  } catch (e) {
+    logRunEnd_(ss, runId, 'ERROR', { message: String(e && e.message ? e.message : e) });
+    throw e;
+  }
+}
+
+/* מחזירה את המחרוזת השמורה בלי לפרק אותה. */
+function readHistoryCacheBlob_(ss) {
+  var sh = ss.getSheetByName(HCACHE.sheet);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var vals = sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues();
+  var out = '';
+  for (var i = 0; i < vals.length; i++) out += String(vals[i][0] || '');
+  return out || null;
+}
+
+/* טריגר יומי. רץ אחרי refreshDatabaseDaily כדי שהמטמון ישקף את ההיסטוריה
+   המעודכנת ולא את זו של אתמול. */
+function installHistoryCacheTrigger() {
+  var removed = deleteTriggersByHandler_('buildHistoryCache');
+  ScriptApp.newTrigger('buildHistoryCache')
+    .timeBased().everyDays(1).atHour(CFG.dbDailyHour + 1).create();
+  Logger.log('טריגר יומי הותקן לשעה ' + (CFG.dbDailyHour + 1) + ':00. ישנים שהוסרו: ' + removed);
+  return 'ok';
+}
+
 // =================== WEB API (for HTML) ===================
 // URL usage examples:
 // .../exec?resource=realtime
@@ -1261,7 +1388,27 @@ function importFxHistory() {
 function doGet(e) {
   try {
     const resource = (e && e.parameter && e.parameter.resource) ? String(e.parameter.resource) : "health";
-    const payload = api_(resource, e && e.parameter ? e.parameter : {});
+    const params = e && e.parameter ? e.parameter : {};
+
+    /* מסלול גולמי למטמון ההיסטוריה. הוא **לא** עובר דרך api_ בכוונה:
+       api_ מחזירה אובייקט ש-JSON.stringify מסדר מחדש, ופירוק והרכבה של
+       ~470 אלף תווים מחזירים בדיוק את העלות שהמטמון נועד להעיף. כאן
+       המחרוזת השמורה נדחפת לתוך המעטפת בהדבקה, בלי parse ובלי stringify.
+       השער נאכף לפני — אותה בדיקה, בלי קיצור דרך. */
+    if (String(resource).trim().toLowerCase() === "history_cache") {
+      if (authRequired_() && !verifySession_(params.session)) throw new Error("unauthorized");
+      const ss2 = SpreadsheetApp.getActiveSpreadsheet();
+      const blob = readHistoryCacheBlob_(ss2);
+      if (!blob) throw new Error("history cache not built");
+      const pr = props_();
+      return ContentService.createTextOutput(
+        '{"ok":true,"resource":"history_cache","builtAt":' + JSON.stringify(pr.getProperty(HCACHE.pBuiltAt) || '') +
+        ',"symbols":' + JSON.stringify(String(pr.getProperty(HCACHE.pSymbols) || '').split(',').filter(Boolean)) +
+        ',"series":' + blob + '}'
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const payload = api_(resource, params);
     return jsonOut_({ ok: true, resource, ...payload });
   } catch (err) {
     return jsonOut_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -1372,6 +1519,9 @@ function api_(resource, params) {
 
     return out;
   }
+
+  // history_cache מטופל ב-doGet לפני הקריאה לכאן. אם הגענו — זו טעות תכנות.
+  if (r === "history_cache") throw new Error("history_cache is handled in doGet");
 
   throw new Error("Unknown resource: " + resource);
 }

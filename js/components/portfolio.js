@@ -341,7 +341,7 @@ Pages.portfolio = (() => {
     const ports = [...new Set(_positions.map(p => p.portfolio).filter(Boolean))].sort();
 
     container.innerHTML =
-      (ports.length > 1 ? _renderPortFilter(ports) : '') +
+      _renderPortFilter(ports) +
       _renderMacros(mac) +
       `<div class="pf-main-grid">
         ${_renderTable(vis, ports.length > 1 && _portFilter === 'all')}
@@ -365,9 +365,11 @@ Pages.portfolio = (() => {
   function _renderPortFilter(ports) {
     return `
       <div class="pf-filter-bar">
+        ${ports.length > 1 ? `
         <span class="pf-filter-label">תיק:</span>
         <button class="pf-port-btn${_portFilter === 'all' ? ' active' : ''}" data-port="all">כל התיקים</button>
-        ${ports.map(p => `<button class="pf-port-btn${_portFilter === p ? ' active' : ''}" data-port="${p}">${p}</button>`).join('')}
+        ${ports.map(p => `<button class="pf-port-btn${_portFilter === p ? ' active' : ''}" data-port="${p}">${p}</button>`).join('')}` : ''}
+        <button class="pf-port-btn pf-manage" id="pf-manage-acc" title="ניהול חשבונות התיקים">ניהול חשבונות</button>
       </div>`;
   }
 
@@ -646,6 +648,17 @@ Pages.portfolio = (() => {
 
   /* ── Events ── */
   function _bindEvents(container) {
+    /* ניהול החשבונות נפתח מכאן ולא ממסך הגדרות מרכזי: חשבון מסוג "תיק
+       השקעות" שייך לעולם הזה, וזה מה שיועד ביקש. שינוי שם חשבון כותב
+       מחדש את עמודת Portfolio בתנועות, ולכן בסגירה טוענים הכול מחדש
+       במקום לנחש מה השתנה. */
+    const mgr = container.querySelector('#pf-manage-acc');
+    if (mgr) mgr.addEventListener('click', () => FA.accounts.open({
+      types: ['brokerage'],
+      title: 'ניהול חשבונות תיקי השקעות',
+      onChange: () => { DataService.clearCache(); App.refreshData(); }
+    }));
+
     container.querySelectorAll('.pf-port-btn').forEach(btn =>
       btn.addEventListener('click', () => {
         if (btn.dataset.port === _portFilter) return;

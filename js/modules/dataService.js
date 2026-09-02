@@ -11,6 +11,8 @@ const DataService = (() => {
   let _lastFetch = {};
   /* נדלק פעם אחת אם השרת עוד לא מכיר את resource=histories. ר' getStockHistories. */
   let _noBatchHistories = false;
+  /* נדלק פעם אחת אם המטמון היומי עוד לא נבנה. ר' getStockHistories. */
+  let _noHistoryCache = false;
 
   /* ---- Core fetch (follows Google's redirect) ----
      כל בקשה נושאת את המושב אם יש. השרת מתעלם ממנו כל עוד המתג שם כבוי,
@@ -244,13 +246,41 @@ const DataService = (() => {
       .filter(Boolean))];
 
     const out = {};
-    const missing = [];
+    let missing = [];
     want.forEach(sym => {
       const k = `history_${sym}`;
       if (_cache[k] && (now - _lastFetch[k]) < CACHE_TTL) out[sym] = _cache[k];
       else missing.push(sym);
     });
     if (!missing.length) return out;
+
+    /* המטמון קודם. קריאה אחת מחזירה את כל הניירות מתוך מחרוזת שנבנתה
+       בעבודה לילית, במקום לקרוא 27 טאבים בזמן אמת.
+       נייר שנסחר לראשונה אחרי הבנייה האחרונה פשוט לא יהיה שם — הוא נשאר
+       ב-missing ויימשך בנתיב הרגיל, כך שנייר חדש אף פעם לא "נעלם".      */
+    if (!_noHistoryCache) {
+      try {
+        const cache = await _fetch({ resource: "history_cache" });
+        const series = cache.series || {};
+        const still = [];
+        missing.forEach(sym => {
+          const e = series[sym];
+          if (!e || !Array.isArray(e.d) || !Array.isArray(e.c)) { still.push(sym); return; }
+          const rows = new Array(e.d.length);
+          for (let i = 0; i < e.d.length; i++) {
+            rows[i] = { date: new Date(e.d[i] * 86400000).toISOString().slice(0, 10), close: e.c[i] };
+          }
+          out[sym] = rows;
+          _cache[`history_${sym}`] = rows;
+          _lastFetch[`history_${sym}`] = now;
+        });
+        if (!still.length) return out;
+        missing = still;              // רק מה שלא היה במטמון ממשיך הלאה
+      } catch (err) {
+        if (err && err.unauthorized) throw err;
+        _noHistoryCache = true;       // מטמון שלא נבנה עדיין — לא מנסים שוב בכל טעינה
+      }
+    }
 
     /* הקריאה המרוכזת נוסתה רק כשהיא בטוחה. כישלון **מכל סוג** מפיל אותה
        לנתיב הבודד: שרת שעוד לא נפרס עונה "Unknown resource", ושרת עמוס
