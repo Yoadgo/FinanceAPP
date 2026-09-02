@@ -39,11 +39,15 @@ Pages.dashboard = (() => {
     if (_currHandler) document.removeEventListener('app:currencychange', _currHandler);
     _currHandler = () => { if (_state) _paint(); };
     document.addEventListener('app:currencychange', _currHandler);
+    _loadToken++;
+    _state = null;
     container.innerHTML = FA.skel.dashboard();
     _load();
   }
 
   let _state = null;
+  /* מונה טעינות — מונע מטעינה ישנה לצייר מעל חדשה. */
+  let _loadToken = 0;
 
   async function _load() {
     try {
@@ -74,23 +78,20 @@ Pages.dashboard = (() => {
       const closed = PortfolioEngine.computeClosedTrades(enriched);
       const realized = closed.reduce((s, t) => s + t.pnl, 0);
 
-      // Equity curve: fetch price history for every traded symbol, then build
-      // the cash / realized / unrealized time series.
-      const symbols = [...new Set(enriched
-        .filter(r => r.category === 'STOCKS')
-        .map(r => (r.Symbol || '').toString().trim().toUpperCase())
-        .filter(s => /^[A-Z]{1,5}$/.test(s)))];
-      const historyMap = {};
-      await Promise.all(symbols.map(async s => {
-        try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
-      }));
-      const curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
+      /* ── שלב א': כל המספרים, מיד ──
+         העקומה מחשבת שני דברים שונים: `invested` ו-`cashAdj` נגזרים
+         מהתנועות בלבד, ואילו `unrealized` דורש מחירים היסטוריים.
+         לכן קריאה עם מפת היסטוריה ריקה מחזירה את שני הראשונים
+         נכונים לחלוטין — ולכן גם `netWorth` זהה בשני השלבים ולא
+         מרצד. מה שחסר בשלב א' הוא הגרף בלבד, ובמקומו מוצג שלד.
+         לפני השינוי המסך כולו המתין לכ-24 קבצי היסטוריה לפני שצייר מספר אחד. */
+      const quick    = PortfolioEngine.computeEquityCurve(enriched, {}, _fxRate, 'day');
+      const lastPt   = quick.length ? quick[quick.length - 1] : { invested: 0, cashAdj: 0 };
+      const invested = lastPt.invested || 0;
+      const cashAdj  = lastPt.cashAdj || 0;
       // Coherent net worth (accounting identity, currency-consistent):
       //   netWorth = invested + realized + unrealized + cashAdj  (= holdings + total cash)
       // Avoids the ILS-only CashBalanceILS which understated cash (margin overdraft).
-      const lastPt   = curve.length ? curve[curve.length - 1] : { invested: 0, cashAdj: 0 };
-      const invested = lastPt.invested || 0;
-      const cashAdj  = lastPt.cashAdj || 0;
       const netWorth = invested + realized + (mktVal - cost) + cashAdj;
       const impliedCash = netWorth - mktVal;   // total cash (uninvested + realized + income − costs)
 
@@ -99,9 +100,27 @@ Pages.dashboard = (() => {
         unrealized: mktVal - cost,
         unrealizedPct: cost > 0 ? ((mktVal - cost) / cost) * 100 : 0,
         dayChangePct: (mktVal - dayChange) > 0 ? (dayChange / (mktVal - dayChange)) * 100 : 0,
-        realized, cash, cashUSD: impliedCash, invested, cashAdj, curve, netWorth,
+        realized, cash, cashUSD: impliedCash, invested, cashAdj, curve: [], netWorth,
+        curveLoading: true,
       };
       App.setDataStatus('live');
+      _paint();
+
+      /* ── שלב ב': הגרף ──
+         מושך את ההיסטוריה של כל נייר שנסחר ומצייר מחדש. הדגל מוודא
+         שתוצאה שחזרה אחרי שהמשתמש כבר עזב את המסך לא מציירת על מסך אחר. */
+      const token = ++_loadToken;
+      const symbols = [...new Set(enriched
+        .filter(r => r.category === 'STOCKS')
+        .map(r => (r.Symbol || '').toString().trim().toUpperCase())
+        .filter(s => /^[A-Z]{1,5}$/.test(s)))];
+      const historyMap = {};
+      await Promise.all(symbols.map(async s => {
+        try { historyMap[s] = await DataService.getStockHistory(s); } catch (_) { historyMap[s] = []; }
+      }));
+      if (token !== _loadToken || !_state) return;
+      _state.curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
+      _state.curveLoading = false;
       _paint();
     } catch (err) {
       App.setDataStatus('error', err.message);
@@ -160,20 +179,21 @@ Pages.dashboard = (() => {
       </div>`;
 
     const opt = (v, cur, l) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`;
+    const ctlDis = s.curveLoading ? ' disabled' : '';
     const chart = `
       <div class="pf-chart-card" style="margin-top:14px">
         <div class="pf-chart-head">
           <div class="pf-chart-title">התפתחות לאורך זמן — הון שהושקע מול שווי התיק</div>
           <div class="pf-chart-ctls">
             <label class="ret-ctl">טווח:
-              <select id="eq-range">${opt('quarter', _eqRange, 'רבעון')}${opt('year', _eqRange, 'שנה')}${opt('all', _eqRange, 'מההתחלה')}</select>
+              <select id="eq-range"${ctlDis}>${opt('quarter', _eqRange, 'רבעון')}${opt('year', _eqRange, 'שנה')}${opt('all', _eqRange, 'מההתחלה')}</select>
             </label>
             <label class="ret-ctl">רזולוציה:
-              <select id="eq-step">${opt('day', _eqStep, 'יומי')}${opt('week', _eqStep, 'שבועי')}${opt('month', _eqStep, 'חודשי')}</select>
+              <select id="eq-step"${ctlDis}>${opt('day', _eqStep, 'יומי')}${opt('week', _eqStep, 'שבועי')}${opt('month', _eqStep, 'חודשי')}</select>
             </label>
           </div>
         </div>
-        ${_renderEquityChart()}
+        ${s.curveLoading ? FA.skel.chart() : _renderEquityChart()}
         <div class="pf-bar-legend" style="margin-top:6px">
           <span><span class="pf-leg-dot" style="background:#059669"></span>שווי התיק</span>
           <span><span class="pf-leg-dot" style="background:#2563EB"></span>הון שהושקע (הפקדות מצטברות)</span>

@@ -363,16 +363,9 @@ Pages.journal = (() => {
   /* ── Render entry point ── */
   function render(container) {
     _container = container;
-    container.innerHTML = `
-      <div class="journal-loading" id="jnl-loading">
-        <div class="empty-icon" style="margin:0 auto">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-        </div>
-        <p style="color:var(--text-muted);font-size:13px;margin-top:8px">טוען תנועות...</p>
-      </div>
-      <div id="jnl-body" style="display:none"></div>`;
+    container.innerHTML =
+      '<div id="jnl-loading">' + FA.skel.tablePage(10, 6) + '</div>' +
+      '<div id="jnl-body" style="display:none"></div>';
     _loadData();
   }
 
@@ -391,16 +384,16 @@ Pages.journal = (() => {
       App.setDataStatus('error', err.message);
       console.error('Journal error:', err);
       const loading = document.getElementById('jnl-loading');
+      const body2   = document.getElementById('jnl-body');
+      if (body2) body2.style.display = 'none';
       if (loading) {
-        loading.innerHTML = `
-          <div class="empty-icon" style="margin:0 auto;background:rgba(217,48,37,0.08)">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-          </div>
-          <p style="color:var(--danger);font-size:13px;margin-top:10px;font-weight:600">שגיאה בטעינת הנתונים</p>
-          <p style="color:var(--text-muted);font-size:12px;margin-top:4px;max-width:340px;text-align:center;line-height:1.5">${err.message}</p>`;
+        loading.style.display = '';
+        loading.innerHTML = FA.ui.errorState({ detail: err.message, actionId: 'jnl-retry' });
+        const rb = document.getElementById('jnl-retry');
+        if (rb) rb.addEventListener('click', () => {
+          loading.innerHTML = FA.skel.tablePage(10, 6);
+          _loadData();
+        });
       }
     }
   }
