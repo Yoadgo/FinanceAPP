@@ -24,7 +24,7 @@ Pages.cashflow = (() => {
     if (_currHandler) document.removeEventListener('app:currencychange', _currHandler);
     _currHandler = () => { if (_container) _paint(_container); };
     document.addEventListener('app:currencychange', _currHandler);
-    container.innerHTML = `<div class="pf-loading"><p style="color:var(--text-muted);font-size:13px">טוען תזרים...</p></div>`;
+    container.innerHTML = FA.skel.tablePage(8, 4);
     _load();
   }
 
@@ -41,7 +41,11 @@ Pages.cashflow = (() => {
       _paint(_container);
     } catch (err) {
       App.setDataStatus('error', err.message);
-      _container.innerHTML = `<div class="pf-loading"><p style="color:var(--danger);font-size:13px">שגיאה: ${err.message}</p></div>`;
+      // מצב שגיאה מלא: מה קרה, מה זה אומר, ומה הצעד הבא. בלי כפתור ניסיון חוזר
+      // המשתמש נשאר תקוע מול מסך מת.
+      _container.innerHTML = FA.ui.errorState({ detail: err.message, actionId: 'cf-retry' });
+      const _rb = document.getElementById('cf-retry');
+      if (_rb) _rb.addEventListener('click', () => { _container.innerHTML = FA.skel.tablePage(8, 4); _load(); });
     }
   }
 

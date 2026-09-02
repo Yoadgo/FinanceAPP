@@ -39,7 +39,7 @@ Pages.dashboard = (() => {
     if (_currHandler) document.removeEventListener('app:currencychange', _currHandler);
     _currHandler = () => { if (_state) _paint(); };
     document.addEventListener('app:currencychange', _currHandler);
-    container.innerHTML = `<div class="pf-loading"><p style="color:var(--text-muted);font-size:13px">טוען לוח בקרה...</p></div>`;
+    container.innerHTML = FA.skel.dashboard();
     _load();
   }
 
@@ -105,7 +105,11 @@ Pages.dashboard = (() => {
       _paint();
     } catch (err) {
       App.setDataStatus('error', err.message);
-      _container.innerHTML = `<div class="pf-loading"><p style="color:var(--danger);font-size:13px">שגיאה: ${err.message}</p></div>`;
+      // מצב שגיאה מלא: מה קרה, מה זה אומר, ומה הצעד הבא. בלי כפתור ניסיון חוזר
+      // המשתמש נשאר תקוע מול מסך מת.
+      _container.innerHTML = FA.ui.errorState({ detail: err.message, actionId: 'db-retry' });
+      const _rb = document.getElementById('db-retry');
+      if (_rb) _rb.addEventListener('click', () => { _container.innerHTML = FA.skel.dashboard(); _load(); });
     }
   }
 

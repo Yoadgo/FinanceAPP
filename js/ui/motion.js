@@ -62,7 +62,28 @@
     }, { passive: true });
   }
 
-  function boot() { setupNavIndicator(); setupSpecular(); }
+  /* ---------- 3. סרגל עליון מוקפא בגלילה ----------
+     מאזינים ל-#content ולא ל-window: #app הוא flex בגובה 100vh עם overflow
+     hidden, כלומר העמוד עצמו לא נגלל — רק אזור התוכן. */
+  function setupTopbarScroll() {
+    var bar = document.getElementById("topbar");
+    var content = document.getElementById("content");
+    if (!bar || !content) return;
+
+    var ticking = false;
+    function apply() {
+      bar.classList.toggle("is-scrolled", content.scrollTop > 4);
+      ticking = false;
+    }
+    content.addEventListener("scroll", function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(apply);
+    }, { passive: true });
+    apply();
+  }
+
+  function boot() { setupNavIndicator(); setupSpecular(); setupTopbarScroll(); }
 
   // app.js מצייר את הרייל ב-DOMContentLoaded; רצים אחריו
   if (document.readyState === "loading") {

@@ -65,6 +65,48 @@
 }
 
 
+/* ---------- 2ב. הסרגל העליון — התוכן עובר מתחתיו ----------
+   עד עכשיו #topbar ו-#content היו אחים ב-flex, כלומר התוכן נעצר בדיוק מתחת
+   לסרגל ולא עבר מתחתיו. זכוכית על סרגל כזה מטשטשת רקע שטוח — כלומר לא נראית.
+   כאן הסרגל הופך לשכבה שצפה מעל התוכן, והתוכן מקבל ריפוד עליון בגובהו.
+
+   השינוי יושב בקובץ הזה ולא ב-layout.css בכוונה: הסרת glass.css מחזירה את
+   הפריסה הישנה בדיוק, בלי לגעת בשום קובץ אחר.
+
+   שני מצבים, כמו ב-iOS 27: כמעט שקוף בראש העמוד, ומוקפא כשתוכן נגלל מתחתיו.
+   js/ui/motion.js מוסיף .is-scrolled. */
+#main { position: relative; }
+
+#topbar {
+  position: absolute;
+  top: 0; inset-inline: 0;
+  z-index: 50;
+  background: rgba(255,255,255,0.55);
+  backdrop-filter: saturate(var(--glass-sat)) blur(10px);
+  -webkit-backdrop-filter: saturate(var(--glass-sat)) blur(10px);
+  border-bottom: 1px solid transparent;
+  transition: background .28s ease, backdrop-filter .28s ease,
+              border-color .28s ease, box-shadow .28s ease;
+}
+
+#topbar.is-scrolled {
+  background: var(--glass-bg);
+  backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  -webkit-backdrop-filter: saturate(var(--glass-sat)) blur(var(--glass-blur));
+  border-bottom-color: var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-spec), 0 6px 22px -16px rgba(16,24,40,.45);
+}
+
+/* הריפוד העליון מחליף את הגובה שהסרגל כבר לא תופס בזרימה */
+#content { padding-top: calc(28px + var(--topbar-height)); }
+@media (max-width: 768px) {
+  #content { padding-top: calc(14px + var(--topbar-height)); }
+}
+
+/* שורת הסינון הדביקה ביומן נעצרת מתחת לסרגל, לא מאחוריו */
+.journal-sticky-bar { top: var(--topbar-height); }
+
+
 /* ---------- 3. מחוון ניווט נוזלי — כמוסה שגולשת אנכית ברייל ----------
    הרייל אנכי, ולכן המחוון גולש ב-Y ולא ב-X כמו ב-CBA. סדר השכבות חשוב:
    פריטים לא-פעילים (1), המחוון מעליהם (2) כדי שיטשטש אותם בדרך, והפריט
