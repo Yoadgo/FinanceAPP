@@ -370,6 +370,7 @@ Pages.portfolio = (() => {
         <button class="pf-port-btn${_portFilter === 'all' ? ' active' : ''}" data-port="all">כל התיקים</button>
         ${ports.map(p => `<button class="pf-port-btn${_portFilter === p ? ' active' : ''}" data-port="${p}">${p}</button>`).join('')}` : ''}
         <button class="pf-port-btn pf-manage" id="pf-manage-acc" title="ניהול חשבונות התיקים">ניהול חשבונות</button>
+        <button class="pf-port-btn pf-manage" id="pf-manage-ins" title="ניהול ניירות ערך והיסטוריית מחירים">ניהול ניירות</button>
       </div>`;
   }
 
@@ -656,6 +657,13 @@ Pages.portfolio = (() => {
     if (mgr) mgr.addEventListener('click', () => FA.accounts.open({
       types: ['brokerage'],
       title: 'ניהול חשבונות תיקי השקעות',
+      onChange: () => { DataService.clearCache(); App.refreshData(); }
+    }));
+
+    /* ניהול הניירות הוא גם המקום שבו מתגלה נייר בלי היסטוריה — כזה
+       שהגרף מעריך לפי עלות במקום לפי שווי. ר' instruments.js. */
+    const ins = container.querySelector('#pf-manage-ins');
+    if (ins) ins.addEventListener('click', () => FA.instruments.open({
       onChange: () => { DataService.clearCache(); App.refreshData(); }
     }));
 

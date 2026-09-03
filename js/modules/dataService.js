@@ -13,6 +13,8 @@ const DataService = (() => {
   let _noBatchHistories = false;
   /* נדלק פעם אחת אם המטמון היומי עוד לא נבנה. ר' getStockHistories. */
   let _noHistoryCache = false;
+  /* { builtAt, symbols } מהקריאה האחרונה למטמון. ר' getHistoryCacheInfo. */
+  let _cacheInfo = null;
 
   /* ---- Core fetch (follows Google's redirect) ----
      כל בקשה נושאת את המושב אם יש. השרת מתעלם ממנו כל עוד המתג שם כבוי,
@@ -261,6 +263,9 @@ const DataService = (() => {
     if (!_noHistoryCache) {
       try {
         const cache = await _fetch({ resource: "history_cache" });
+        /* נשמר בצד כדי שמנהל הניירות יוכל לדעת למי יש היסטוריה ולמי אין,
+           בלי לשלם עוד קריאה. ר' getHistoryCacheInfo. */
+        _cacheInfo = { builtAt: cache.builtAt || null, symbols: cache.symbols || [] };
         const series = cache.series || {};
         const still = [];
         missing.forEach(sym => {
@@ -312,13 +317,30 @@ const DataService = (() => {
     return out;
   }
 
+  /* ---- מי נמצא במטמון ומי לא ----
+     מנהל הניירות משתמש בזה כדי לסמן נייר שאין לו היסטוריה. אם המידע כבר
+     הגיע אגב טעינת הגרף — מחזירים אותו בחינם; אחרת קריאה אחת.
+     נייר שנסחר אך חסר כאן פירושו שהגרף מעריך אותו לפי עלות ולא לפי שווי,
+     וזה עיוות שקט שאי אפשר לראות בלי לחפש אותו.                          */
+  async function getHistoryCacheInfo() {
+    if (_cacheInfo) return _cacheInfo;
+    try {
+      const c = await _fetch({ resource: "history_cache" });
+      _cacheInfo = { builtAt: c.builtAt || null, symbols: c.symbols || [] };
+    } catch (e) {
+      if (e && e.unauthorized) throw e;
+      _cacheInfo = { builtAt: null, symbols: null };   // null = לא ידוע, לא "ריק"
+    }
+    return _cacheInfo;
+  }
+
   /* ---- Public: clear cache ---- */
   function clearCache(key) {
     if (key) {
       delete _cache[key]; delete _lastFetch[key];
       if (key === 'transactions') try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
     } else {
-      _cache = {}; _lastFetch = {};
+      _cache = {}; _lastFetch = {}; _cacheInfo = null; _noHistoryCache = false;
       try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
     }
   }
@@ -346,5 +368,5 @@ const DataService = (() => {
   }
 
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
-           getFxRate, getRealTimeData, clearCache, login, post };
+           getHistoryCacheInfo, getFxRate, getRealTimeData, clearCache, login, post };
 })();

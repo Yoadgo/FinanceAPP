@@ -235,3 +235,20 @@
 .pf-port-btn.pf-manage { margin-inline-start: auto; font-weight: 600;
                          border-style: dashed; color: var(--text-muted); }
 .pf-port-btn.pf-manage:hover { color: var(--text-primary); border-style: solid; }
+
+/* ===== ניהול ניירות (instruments.js) ===== */
+.fa-ins { width: min(620px, calc(100vw - 32px)); }
+.fa-ins__meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.fa-ins__warn { border: 1px solid rgba(217,48,37,.25); background: rgba(217,48,37,.06);
+                color: var(--text-primary); border-radius: var(--r-md);
+                padding: 12px 14px; font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
+.fa-ins__warn code { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+                     background: var(--bg-subtle); border: 1px solid var(--border);
+                     border-radius: var(--r-xs); padding: 1px 5px; }
+.fa-ins__filter { display: flex; align-items: center; gap: 7px; font-size: 13px;
+                  color: var(--text-muted); margin-bottom: 10px; cursor: pointer; }
+.fa-ins__tag { font-size: 11px; font-weight: 600; border-radius: var(--r-xs);
+               padding: 1px 6px; border: 1px solid var(--border); color: var(--text-muted); }
+.fa-ins__tag.is-held { border-color: rgba(79,70,229,.35); color: var(--dom-invest); }
+.fa-ins__tag.is-warn { border-color: rgba(217,48,37,.35); color: var(--danger);
+                       background: rgba(217,48,37,.06); }
