@@ -11,8 +11,22 @@ const Analytics = (() => {
 
   const n = v => parseFloat((v || '0').toString().replace(/[^\d.-]/g, '')) || 0;
 
+  /* ── The tax-shield family carries its amount in Qty, not in a total ──
+     For Type הפקדה / משיכה the broker writes TotalFX = 0 AND TotalILS = 0,
+     and puts the ILS amount in **Qty** (with ExecutionRate = 100, Currency ₪ —
+     it is quoted as a par-100 bond). Reading TotalILS returns 0, which is why
+     ₪33,212 of tax that was actually paid was displayed as zero.
+     Verified against the sheet 3.9.2026: all 94 משיכה rows and all 161 הפקדה
+     rows have TotalILS = TotalFX = 0.                                        */
+  const QTY_IS_ILS = { TAX_PROVISION: 1, TAX_ACCRUAL: 1, TAX_ACCRUAL_REV: 1,
+                       TAX_RESET: 1, TAX_PAYMENT: 1 };
+
   /* USD magnitude of a row: prefer the foreign (USD) total, else convert ILS. */
   function _usd(row, fx) {
+    if (QTY_IS_ILS[row.subCategory]) {
+      const q = Math.abs(n(row.Qty));
+      return fx ? q / fx : q;
+    }
     const f = n(row.TotalFX);
     if (Math.abs(f) > 0.001) return Math.abs(f);
     const ils = n(row.TotalILS);
@@ -20,15 +34,38 @@ const Analytics = (() => {
     return 0;
   }
 
+  /* Native ILS magnitude — for buckets we refuse to fake-convert. */
+  function _ils(row) {
+    if (QTY_IS_ILS[row.subCategory]) return Math.abs(n(row.Qty));
+    return Math.abs(n(row.TotalILS));
+  }
+
   // sub-category → bucket. Inflows are income/capital-in; outflows are costs.
-  const INFLOW  = { DEPOSIT: 'deposits', CASH_DIVIDEND: 'dividends', CREDIT_INTEREST: 'interest', TAX_REFUND: 'taxRefund' };
+  const INFLOW  = { DEPOSIT: 'deposits', CASH_DIVIDEND: 'dividends', CREDIT_INTEREST: 'interest',
+                    TAX_REFUND: 'taxRefund', BROKER_CREDIT: 'brokerCredit' };
   const OUTFLOW = { TRADE_COMMISSION: 'fees', MGMT_FEE: 'fees', DEBIT_INTEREST: 'debitInterest',
                     CAPITAL_GAIN_TAX: 'taxes', DIVIDEND_TAX: 'taxes', TAX_PAYMENT: 'taxes' };
 
   /* Returns totals (USD) + a date-sorted list of cash events. */
   function cashSummary(txns, fx) {
-    const t = { deposits: 0, dividends: 0, interest: 0, taxRefund: 0,
-                fees: 0, debitInterest: 0, taxes: 0, provision: 0 };
+    const t = { deposits: 0, dividends: 0, interest: 0, taxRefund: 0, brokerCredit: 0,
+                fees: 0, debitInterest: 0, taxes: 0, provision: 0, commission: 0 };
+
+    /* ── Trade commission is NOT a row — it is a COLUMN on the trade row ──
+       This is why the label TRADE_COMMISSION existed but nothing ever
+       produced it, and why the fees bucket showed ₪270 of management fees
+       while $5,006 of commission went uncounted. Read the column.
+       Verified 3.9.2026: every non-zero Commission sits on a Currency='$'
+       row, so no cross-currency mixing. The guard keeps it that way — an
+       ILS-denominated commission would be converted, not silently added. */
+    (txns || []).forEach(r => {
+      if (r.category !== 'STOCKS') return;
+      const c = Math.abs(n(r.Commission));
+      if (!(c > 0)) return;
+      const isIls = (r.Currency || '').toString().trim() === '₪';
+      t.commission += isIls ? (fx ? c / fx : c) : c;
+    });
+    t.fees += t.commission;
     const events = [];
 
     (txns || []).forEach(r => {
@@ -55,27 +92,29 @@ const Analytics = (() => {
       });
     });
 
-    const inflow  = t.deposits + t.dividends + t.interest + t.taxRefund;
+    const inflow  = t.deposits + t.dividends + t.interest + t.taxRefund + t.brokerCredit;
     const outflow = t.fees + t.debitInterest + t.taxes;
     return {
       ...t,
       inflow, outflow,
       net: inflow - outflow,                                   // includes capital deposits
-      incomeNet: (t.dividends + t.interest + t.taxRefund) - outflow, // income only, ex-deposits
+      incomeNet: (t.dividends + t.interest + t.taxRefund + t.brokerCredit) - outflow, // income only, ex-deposits
       events: events.sort((a, b) => new Date(b.date) - new Date(a.date)),
     };
   }
 
   /* Tax breakdown (USD) overall + per calendar year. */
   function taxSummary(txns, fx) {
-    const SUB = { CAPITAL_GAIN_TAX: 'capitalGain', DIVIDEND_TAX: 'dividend', TAX_PAYMENT: 'payment', TAX_REFUND: 'refund', TAX_PROVISION: 'provision' };
+    const SUB = { CAPITAL_GAIN_TAX: 'capitalGain', DIVIDEND_TAX: 'dividend', TAX_PAYMENT: 'payment',
+                  TAX_REFUND: 'refund', TAX_PROVISION: 'provision' };
+    /* TAX_ACCRUAL / TAX_ACCRUAL_REV / TAX_RESET are deliberately absent: they
+       are internal movements of the tax shield, not tax. */
     const totals = { capitalGain: 0, dividend: 0, payment: 0, refund: 0, provision: 0 };
     const years = {};
     (txns || []).forEach(r => {
       const bucket = SUB[r.subCategory];
       if (!bucket) return;
-      let amt = _usd(r, fx);
-      if (r.subCategory === 'TAX_PROVISION') amt = fx ? Math.abs(n(r.Qty)) / fx : Math.abs(n(r.Qty));
+      const amt = _usd(r, fx);   // _usd now reads Qty for the shield family
       totals[bucket] += amt;
       const y = new Date(r.Date).getFullYear();
       if (isFinite(y)) {
@@ -101,5 +140,115 @@ const Analytics = (() => {
     return keys.length ? keys.reduce((s, k) => s + latestByPort[k], 0) : null;
   }
 
-  return { cashSummary, taxSummary, latestCashILS };
+
+  /* ═══════════════════════════════════════════════════════════════════
+     frictionSummary — what the account costs to operate
+     ───────────────────────────────────────────────────────────────────
+     Everything the broker takes, separated from everything the market
+     gives. Built for one reason: until now the app answered "עמלות: ₪270"
+     when the real figure was $5,006 of commission on top of it.
+
+     Currency is kept honest. Each bucket carries its NATIVE amount —
+     `usd` for dollar-denominated rows, `ils` for shekel ones — plus a
+     `conv` field converted at TODAY'S rate. USD/ILS moved between 2.80
+     and 4.08 over this data's lifetime (a 46% swing), so `conv` on a
+     four-year total is an approximation and the UI must say so. The
+     native figures are the ones that are exactly true.
+     ═══════════════════════════════════════════════════════════════════ */
+  function _bucket() { return { usd: 0, ils: 0, count: 0 }; }
+  function _conv(b, fx) { return b.usd + (fx ? b.ils / fx : b.ils); }
+
+  function frictionSummary(txns, fx) {
+    const commission    = _bucket();   // trade commission — a COLUMN, not a row
+    const mgmtFee       = _bucket();   // דמי טיפול
+    const debitInterest = _bucket();   // ריבית חובה on margin/credit
+    const withholding   = _bucket();   // foreign tax withheld at source
+    const capGainTax    = _bucket();   // capital-gains tax actually PAID
+    const dividends     = _bucket();
+    const creditInterest= _bucket();
+    const brokerCredit  = _bucket();
+    const turnover      = { buys: 0, sells: 0 };
+    const years         = {};
+    const symbols       = {};
+
+    const yr = r => { const y = new Date(r.Date).getFullYear(); return isFinite(y) ? y : null; };
+    const bumpYear = (y, key, v) => {
+      if (y === null || !(v > 0)) return;
+      if (!years[y]) years[y] = { year: y, commission: 0, mgmtFee: 0, debitInterest: 0,
+                                  withholding: 0, capGainTax: 0, income: 0, trades: 0, turnover: 0 };
+      years[y][key] += v;
+    };
+
+    (txns || []).forEach(r => {
+      const sub = r.subCategory, y = yr(r);
+      const isIls = (r.Currency || '').toString().trim() === '₪';
+
+      /* ── Trades: commission off the column, turnover off the total ── */
+      if (r.category === 'STOCKS' && (sub === 'BUY_STOCK' || sub === 'SELL_STOCK')) {
+        const gross = Math.abs(n(r.TotalFX)) || (fx ? Math.abs(n(r.TotalILS)) / fx : 0);
+        if (sub === 'BUY_STOCK') turnover.buys += gross; else turnover.sells += gross;
+        bumpYear(y, 'turnover', gross);
+        bumpYear(y, 'trades', 1);
+
+        const c = Math.abs(n(r.Commission));
+        if (c > 0) {
+          commission.count++;
+          if (isIls) commission.ils += c; else commission.usd += c;
+          bumpYear(y, 'commission', isIls ? (fx ? c / fx : c) : c);
+        }
+        const symKey = (r.Symbol || '').toString().trim().toUpperCase();
+        if (symKey) {
+          if (!symbols[symKey]) symbols[symKey] = { symbol: symKey, commission: 0, trades: 0, turnover: 0 };
+          symbols[symKey].trades++;
+          symbols[symKey].turnover += gross;
+          symbols[symKey].commission += isIls ? (fx ? c / fx : c) : c;
+        }
+        return;
+      }
+
+      /* ── Standalone cost and income rows ── */
+      const put = (b, key) => {
+        const u = _usd(r, fx);
+        if (!(u > 0)) return;
+        b.count++;
+        // A row is ILS-native when it carries no foreign total.
+        if (Math.abs(n(r.TotalFX)) > 0.001) b.usd += Math.abs(n(r.TotalFX));
+        else b.ils += _ils(r);
+        bumpYear(y, key, u);
+      };
+
+      if (sub === 'MGMT_FEE')             put(mgmtFee, 'mgmtFee');
+      else if (sub === 'DEBIT_INTEREST')  put(debitInterest, 'debitInterest');
+      else if (sub === 'DIVIDEND_TAX' || sub === 'CAPITAL_GAIN_TAX') put(withholding, 'withholding');
+      else if (sub === 'TAX_PAYMENT')     put(capGainTax, 'capGainTax');
+      else if (sub === 'CASH_DIVIDEND')   put(dividends, 'income');
+      else if (sub === 'CREDIT_INTEREST') put(creditInterest, 'income');
+      else if (sub === 'BROKER_CREDIT')   put(brokerCredit, 'income');
+    });
+
+    const costs  = [commission, mgmtFee, debitInterest, withholding, capGainTax];
+    const income = [dividends, creditInterest, brokerCredit];
+    const totalCost   = costs.reduce((s2, b) => s2 + _conv(b, fx), 0);
+    const totalIncome = income.reduce((s2, b) => s2 + _conv(b, fx), 0);
+    const totalTurnover = turnover.buys + turnover.sells;
+
+    return {
+      commission, mgmtFee, debitInterest, withholding, capGainTax,
+      dividends, creditInterest, brokerCredit,
+      turnover: { ...turnover, total: totalTurnover },
+      totalCost, totalIncome,
+      /* Excluding tax, because tax is a consequence of profit and the other
+         four are a consequence of activity. Mixing them hides the lever the
+         user actually controls. */
+      totalCostExTax: _conv(commission, fx) + _conv(mgmtFee, fx) + _conv(debitInterest, fx),
+      commissionConv: _conv(commission, fx),
+      avgCommission: commission.count ? _conv(commission, fx) / commission.count : 0,
+      commissionPctOfTurnover: totalTurnover > 0 ? (_conv(commission, fx) / totalTurnover) * 100 : 0,
+      byYear: Object.values(years).sort((a, b) => b.year - a.year),
+      bySymbol: Object.values(symbols).filter(x => x.trades > 0)
+                      .sort((a, b) => b.commission - a.commission),
+    };
+  }
+
+  return { cashSummary, taxSummary, latestCashILS, frictionSummary };
 })();

@@ -139,9 +139,13 @@ Pages.performance = (() => {
     const estCGT = Math.max(0, realizedThisYear) * CGT_RATE;
 
     const cards = `<div class="pf-macros-row">
-      <div class="pf-macro-card"><div class="pf-macro-label">מס רווח הון שנוכה</div>
-        <div class="pf-macro-value" style="color:var(--danger)">${sym}${fmtMoney(toDisplay(t.capitalGain))}</div>
-        <div class="pf-macro-sub">במקור, מצטבר</div></div>
+      <!-- היה כאן "מס רווח הון שנוכה במקור". בחשבון הזה שום מס רווח הון
+           לא נוכה במקור אי פעם — כל 72 הניכויים הזרים הם על דיבידנד (25%
+           בדיוק, מזווגים 1:1 לתקבול). מס רווח הון משולם בדיעבד דרך מגן
+           המס, וזה הסכום שבאמת יצא מהחשבון — עד עכשיו הוא הוצג כאפס. -->
+      <div class="pf-macro-card"><div class="pf-macro-label">מס רווח הון ששולם בפועל</div>
+        <div class="pf-macro-value" style="color:var(--danger)">${sym}${fmtMoney(toDisplay(t.payment))}</div>
+        <div class="pf-macro-sub">נמשך ממגן המס, מצטבר</div></div>
       <div class="pf-macro-card"><div class="pf-macro-label">מס דיבידנד שנוכה</div>
         <div class="pf-macro-value" style="color:var(--danger)">${sym}${fmtMoney(toDisplay(t.dividend))}</div>
         <div class="pf-macro-sub">במקור, מצטבר</div></div>
@@ -158,7 +162,7 @@ Pages.performance = (() => {
       return `<tr>
         <td class="pf-td-center pf-td-bold">${y.year}</td>
         <td class="pf-td-center pf-td-num"><div class="pf-pnl-cell ${realizedY >= 0 ? 'pos' : 'neg'}"><span class="pf-pnl-amt">${realizedY >= 0 ? '+' : '−'}${sym}${fmtMoney(toDisplay(realizedY))}</span></div></td>
-        <td class="pf-td-center pf-td-num">${sym}${fmtMoney(toDisplay(y.capitalGain))}</td>
+        <td class="pf-td-center pf-td-num">${sym}${fmtMoney(toDisplay(y.payment))}</td>
         <td class="pf-td-center pf-td-num">${sym}${fmtMoney(toDisplay(y.dividend))}</td>
         <td class="pf-td-center pf-td-num pf-td-muted">${sym}${fmtMoney(toDisplay(y.provision))}</td>
       </tr>`;
@@ -166,7 +170,7 @@ Pages.performance = (() => {
 
     return cards + `
       <div class="pf-table-wrap" style="margin-top:14px"><table class="pf-table">
-        <thead><tr><th>שנה</th><th>רווח ממומש</th><th>מס רווח הון</th><th>מס דיבידנד</th><th>מגן מס</th></tr></thead>
+        <thead><tr><th>שנה</th><th>רווח ממומש</th><th>מס ששולם</th><th>מס דיבידנד שנוכה</th><th>מגן מס</th></tr></thead>
         <tbody>${yearRows || `<tr><td colspan="5" class="pf-no-data">אין נתוני מס</td></tr>`}</tbody>
       </table></div>
       <p style="color:var(--text-muted);font-size:12px;margin-top:10px;text-align:center;line-height:1.5">

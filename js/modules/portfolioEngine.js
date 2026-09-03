@@ -423,5 +423,86 @@ const PortfolioEngine = (() => {
     return points;
   }
 
-  return { computePositions, computeClosedTrades, computeEquityCurve };
+
+  /* ═══════════════════════════════════════════════════
+     computeLotSlices — every FIFO match, as its own record
+     ─────────────────────────────────────────────────
+     computeClosedTrades answers "what did this SELL earn" and collapses the
+     lots behind it into a quantity-weighted average holding period. That is
+     the right shape for a trades table and the wrong shape for measuring
+     performance against a benchmark, which needs the exact window each
+     slice of capital was actually exposed for.
+
+     So this emits one record per (lot, sell) match — plus one per lot that
+     is still open — and deliberately shares this module's private helpers
+     (_sorted, _isRelevant, _action, split scaling) rather than restating
+     them somewhere else. Two FIFO implementations that must be kept in
+     step is a bug waiting for the next corporate action.
+
+     Nothing here changes computePositions or computeClosedTrades.
+     ══════════════════════════════════════════════════ */
+  function computeLotSlices(transactions) {
+    const books  = {};   // key → { portfolio, symbol, lots: [{qty, cps, date}] }
+    const slices = [];
+    const relevant = _sorted((transactions || []).filter(_isRelevant));
+
+    relevant.forEach(row => {
+      const sym = (row.Symbol || '').toString().trim().toUpperCase();
+      if (!sym || !isTicker(sym)) return;
+      const port = (row.Portfolio || '').trim();
+      const key  = `${port}|${sym}`;
+      if (!books[key]) books[key] = { portfolio: port, symbol: sym, lots: [] };
+      const b = books[key];
+
+      if (row.subCategory === 'SPLIT') {
+        const delta = Math.abs(n(row.Qty));
+        const held  = b.lots.reduce((s, l) => s + l.qty, 0);
+        if (held > 0.001 && delta > 0) {
+          const ratio = (held + delta) / held;
+          b.lots.forEach(l => { l.qty *= ratio; l.cps /= ratio; });
+        }
+        return;
+      }
+
+      const action = _action(row);
+      if (!action) return;
+      const qty   = Math.abs(n(row.Qty));
+      const price = Math.abs(n(row.ExecutionRate));
+      if (!qty) return;
+      const cps = price > 0 ? price : Math.abs(n(row.TotalFX)) / qty;
+
+      if (action === 'BUY') { b.lots.push({ qty, cps, date: row.Date }); return; }
+
+      let rem = qty;
+      while (rem > 0.0001 && b.lots.length > 0) {
+        const lot  = b.lots[0];
+        const take = Math.min(lot.qty, rem);
+        slices.push({
+          symbol: sym, portfolio: port, qty: take,
+          buyPrice: lot.cps, buyDate: lot.date,
+          sellPrice: price,  sellDate: row.Date,
+          open: false,
+        });
+        lot.qty -= take; rem -= take;
+        if (lot.qty < 0.0001) b.lots.shift();
+      }
+      // rem > 0 here means a SELL with no matching BUY — same data error
+      // computePositions clamps. Emitting nothing is the honest response.
+    });
+
+    Object.values(books).forEach(b => {
+      b.lots.forEach(l => {
+        if (l.qty > 0.0001) slices.push({
+          symbol: b.symbol, portfolio: b.portfolio, qty: l.qty,
+          buyPrice: l.cps, buyDate: l.date,
+          sellPrice: null, sellDate: null,
+          open: true,
+        });
+      });
+    });
+
+    return slices;
+  }
+
+  return { computePositions, computeClosedTrades, computeEquityCurve, computeLotSlices };
 })();

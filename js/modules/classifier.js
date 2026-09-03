@@ -36,6 +36,7 @@ const Classifier = (() => {
       FX_CONVERSION:    'המרת מט"ח',
       SPLIT:            'פיצול מניות',   // corporate action — no monetary value
       BONUS:            'בונוס מניות',   // corporate action
+      BROKER_CREDIT:    'זיכוי מהברוקר', // שונות מזומן בשח — מבצע חבר מביא חבר. כסף אמיתי שנכנס.
     },
     INTEREST: {
       CREDIT_INTEREST:  'ריבית זכות',
@@ -51,6 +52,12 @@ const Classifier = (() => {
       TAX_PROVISION:    'עתודת מס (מגן מס)',
       TAX_PAYMENT:      'תשלום מס',
       TAX_REFUND:       'זיכוי מס',
+      /* שלוש התוויות הבאות הן **תנועות פנימיות של מגן המס, לא עלות**.
+         עד עכשיו הן נפלו ל-UNCLASSIFIED (55 שורות). כל מי שמסכם עלויות
+         חייב לדלג עליהן — אחרת המס נספר פעמיים ושלוש. */
+      TAX_ACCRUAL:      'צבירת מס עתידי',   // הפקדה/"מס עתידי"
+      TAX_ACCRUAL_REV:  'שחרור מס עתידי',   // משיכה/"מס עתידי" — מקזזת את הקודמת בדיוק
+      TAX_RESET:        'איפוס מגן מס',     // משיכה/"איפוס מגן מס"
     },
     UNCLASSIFIED: {
       UNKNOWN: 'לא מסווג',
@@ -98,9 +105,22 @@ const Classifier = (() => {
       [category, subCategory] = ['CASH', 'DEPOSIT'];
     }
 
-    /* ---- INTEREST ---- */
+    /* שונות מזומן בשח — 4 rows, all "מבצע חבר מביא חבר", +₪1,500 total.
+       Real money that entered the account and was counted nowhere. */
+    else if (type === 'שונות מזומן בשח') {
+      [category, subCategory] = ['CASH', 'BROKER_CREDIT'];
+    }
+
+    /* ---- INTEREST ----
+       משיכת ריבית מטח was mapped straight to CREDIT_INTEREST — income.
+       In the real data all 5 rows are named "ריבית חובה מט"ח" and carry a
+       NEGATIVE TotalFX (−$3.67 in total): they are a charge, not a receipt.
+       Small money, wrong direction, and the direction is what the cash-flow
+       screen shows. The Name decides; the Type alone cannot. */
     else if (type === 'משיכת ריבית מטח') {
-      [category, subCategory] = ['INTEREST', 'CREDIT_INTEREST'];
+      [category, subCategory] = has(nameLower, 'ר. חובה', 'ר.חובה', 'ריבית חובה')
+        ? ['FEES', 'DEBIT_INTEREST']
+        : ['INTEREST', 'CREDIT_INTEREST'];
     }
 
     /* ---- FEES (includes debit interest — a cost charged by the broker) ---- */
@@ -112,16 +132,34 @@ const Classifier = (() => {
     }
 
     /* ---- TAXES ---- */
-    // הפקדה: broker parks money in a tax-bond (מגן מס). TotalILS=0 always.
+    /* הפקדה: the broker parks money in a tax-bond. TotalILS and TotalFX are
+       BOTH 0 — **the amount sits in Qty, in ILS**. Two distinct names:
+         "מגן מס"    (114 rows) → the provision itself
+         "מס עתידי"  (47 rows)  → a future-tax accrual that is reversed 1:1
+                                   by a משיכה row of the same name and amount.
+       Splitting them matters: the accrual pair nets to zero and must never
+       be counted as a cost, while the provision is a real (if reversible)
+       parking of cash. */
     else if (type === 'הפקדה') {
-      [category, subCategory] = ['TAXES', 'TAX_PROVISION'];
+      category    = 'TAXES';
+      subCategory = has(nameLower, 'מס עתידי') ? 'TAX_ACCRUAL' : 'TAX_PROVISION';
     }
 
-    // משיכה: either a tax payment OR a debit-interest charge on credit.
-    // Must check Name to distinguish them.
+    /* משיכה: four distinct things share one Type. The Name is the only
+       discriminator, and the amount is in **Qty (ILS)**, not TotalILS.
+         "מס לשלם"       (43) → the tax that was ACTUALLY PAID. A real cost.
+         "מס עתידי"      (47) → reverses the הפקדה accrual. Nets to zero.
+         "איפוס מגן מס"  (4)  → releases the provision. Not a cost.
+       Only the first is money that left for good. Before this split, the
+       last two fell to UNCLASSIFIED and TAX_PAYMENT was valued at zero,
+       so ₪33,212 of paid tax was invisible. */
     else if (type === 'משיכה') {
       if (has(nameLower, 'מס לשלם')) {
         [category, subCategory] = ['TAXES', 'TAX_PAYMENT'];
+      } else if (has(nameLower, 'מס עתידי')) {
+        [category, subCategory] = ['TAXES', 'TAX_ACCRUAL_REV'];
+      } else if (has(nameLower, 'איפוס מגן מס', 'איפוס מגן')) {
+        [category, subCategory] = ['TAXES', 'TAX_RESET'];
       } else if (has(nameLower, 'ר. חובה', 'ר.חובה', 'ריבית חובה')) {
         [category, subCategory] = ['FEES', 'DEBIT_INTEREST'];
       } else {
@@ -129,12 +167,22 @@ const Classifier = (() => {
       }
     }
 
-    // משיכת מס חול מטח: foreign withholding tax deducted at source.
+    /* משיכת מס חול מטח: foreign tax withheld AT SOURCE.
+       The old rule looked for "דיב" in the Name and fell back to capital
+       gains. But the broker names these rows "מסח/ TICKER US" (מס חו"ל),
+       while the matching dividend is "דיב/ TICKER US" — so the marker is on
+       the OTHER row and every one of the 72 rows fell to CAPITAL_GAIN_TAX.
+       Checked against the sheet 3.9.2026: all 72 pair 1:1 with a dividend
+       receipt on the same date and ticker, at exactly 25% of it
+       (13.83/55.32, 4.06/16.25, 39.91/159.65). Nothing is withheld at source
+       on capital gains in this account — that tax is paid later through the
+       מגן מס mechanism, as TAX_PAYMENT.
+       So: this Type is dividend withholding unless the Name says otherwise. */
     else if (type === 'משיכת מס חול מטח') {
       category    = 'TAXES';
-      subCategory = has(nameLower, 'דיב', 'div', 'dividend')
-        ? 'DIVIDEND_TAX'
-        : 'CAPITAL_GAIN_TAX';
+      subCategory = has(nameLower, 'רווח הון', 'רווחי הון', 'capital')
+        ? 'CAPITAL_GAIN_TAX'
+        : 'DIVIDEND_TAX';
     }
 
     /* ---- Name-based fallbacks (catch rows whose Type wasn't listed above) ----
