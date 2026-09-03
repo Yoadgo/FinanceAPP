@@ -34,6 +34,28 @@ const Analytics = (() => {
     return 0;
   }
 
+  /* ── כיוון התנועה מול הכיוון הטבעי של הדלי ──
+     `_usd` מחזירה גודל מוחלט, וזה נכון כל עוד כל שורה זורמת לכיוון שהדלי
+     מצפה לו. שתי דוגמאות מהנתונים האמיתיים שמפרות את ההנחה:
+
+       • `העברה מזומן בשח` בשם "משיכה מקובץ אקסל", 02/06/2026, ‎−₪100,000.
+         זו **משיכה** שרשומה כהעברה. הערך המוחלט הפך אותה להפקדה, ולכן
+         "הפקדות הון" הוצגו כ-₪937,800 במקום ₪737,800 — **תוספת פיקטיבית
+         של ₪200,000**, שנכנסת גם ל-`invested` בגרף ההתפתחות.
+       • שורות היפוך של דיבידנד בדוחות אלטשולר (+42.42 מול −42.42):
+         זוג שמתקזז, שהערך המוחלט הופך לכפל הכנסה.
+
+     לכן: שורה שסימנה **הפוך** מהכיוון הטבעי של הדלי היא **תיקון**, לא
+     אירוע נוסף מאותו סוג — והיא נספרת בסימן שלילי בתוך הדלי.
+     אומת מול הגיליון 3.9.2026: פרט לשורת ה-₪100,000, **אף שורה אחרת אינה
+     סותרת את כיוון הדלי שלה** — כלומר התיקון הזה הוא no-op על כל השאר. */
+  function _dir(row, expected) {
+    var raw = n(row.TotalFX);
+    if (!(Math.abs(raw) > 0.001)) raw = n(row.TotalILS);
+    if (!(Math.abs(raw) > 0.001)) return 1;      // סכום שיושב ב-Qty — אין סימן לקרוא
+    return (raw > 0 ? 1 : -1) === expected ? 1 : -1;
+  }
+
   /* Native ILS magnitude — for buckets we refuse to fake-convert. */
   function _ils(row) {
     if (QTY_IS_ILS[row.subCategory]) return Math.abs(n(row.Qty));
@@ -73,8 +95,8 @@ const Analytics = (() => {
       let bucket = null, sign = 0;
       let amt = _usd(r, fx);
 
-      if (INFLOW[sub])        { bucket = INFLOW[sub];  sign =  1; }
-      else if (OUTFLOW[sub])  { bucket = OUTFLOW[sub]; sign = -1; }
+      if (INFLOW[sub])        { bucket = INFLOW[sub];  sign =  1; amt *= _dir(r,  1); }
+      else if (OUTFLOW[sub])  { bucket = OUTFLOW[sub]; sign = -1; amt *= _dir(r, -1); }
       else if (sub === 'TAX_PROVISION') {
         // מגן מס: TotalILS is 0; the ILS amount sits in Qty. Informational only.
         bucket = 'provision'; sign = 0;
@@ -207,13 +229,14 @@ const Analytics = (() => {
       }
 
       /* ── Standalone cost and income rows ── */
-      const put = (b, key) => {
-        const u = _usd(r, fx);
-        if (!(u > 0)) return;
+      const put = (b, key, expected) => {
+        const d = _dir(r, expected === undefined ? -1 : expected);
+        const u = _usd(r, fx) * d;
+        if (!Math.abs(u)) return;
         b.count++;
         // A row is ILS-native when it carries no foreign total.
-        if (Math.abs(n(r.TotalFX)) > 0.001) b.usd += Math.abs(n(r.TotalFX));
-        else b.ils += _ils(r);
+        if (Math.abs(n(r.TotalFX)) > 0.001) b.usd += Math.abs(n(r.TotalFX)) * d;
+        else b.ils += _ils(r) * d;
         bumpYear(y, key, u);
       };
 
@@ -221,9 +244,9 @@ const Analytics = (() => {
       else if (sub === 'DEBIT_INTEREST')  put(debitInterest, 'debitInterest');
       else if (sub === 'DIVIDEND_TAX' || sub === 'CAPITAL_GAIN_TAX') put(withholding, 'withholding');
       else if (sub === 'TAX_PAYMENT')     put(capGainTax, 'capGainTax');
-      else if (sub === 'CASH_DIVIDEND')   put(dividends, 'income');
-      else if (sub === 'CREDIT_INTEREST') put(creditInterest, 'income');
-      else if (sub === 'BROKER_CREDIT')   put(brokerCredit, 'income');
+      else if (sub === 'CASH_DIVIDEND')   put(dividends, 'income', 1);
+      else if (sub === 'CREDIT_INTEREST') put(creditInterest, 'income', 1);
+      else if (sub === 'BROKER_CREDIT')   put(brokerCredit, 'income', 1);
     });
 
     const costs  = [commission, mgmtFee, debitInterest, withholding, capGainTax];
