@@ -1,0 +1,153 @@
+/* ===== EXPENSES — סיווג והוצאות =====================================
+   כל המחלקות בקידומת .ex- כדי שלא תהיה התנגשות עם שאר המסכים.
+   יושב על טוקני המערכת (variables.css + tokens.css) ולא ממציא צבעים:
+   --dom-spend הוא גוון עולם התזרים, ולכן הוא הצבע הפעיל כאן.
+   ==================================================================== */
+
+.ex { max-width: 960px; }
+
+.ex-head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px;
+  margin-bottom:20px; flex-wrap:wrap; }
+.ex-sub { color:var(--text-secondary); font-size:13px; }
+
+.ex-tabs { display:flex; gap:4px; background:var(--bg-subtle); padding:4px; border-radius:var(--r-pill); }
+.ex-tab { border:0; background:transparent; padding:8px 18px; border-radius:var(--r-pill); cursor:pointer;
+  font:inherit; font-weight:550; font-size:13px; color:var(--text-secondary); transition:all var(--t-press); }
+.ex-tab.on { background:var(--bg-surface); color:var(--dom-spend); box-shadow:0 1px 3px rgba(16,24,40,.1); }
+.ex-tab i { font-style:normal; background:var(--dom-spend); color:#fff; border-radius:var(--r-pill);
+  padding:1px 7px; font-size:11px; margin-inline-start:4px; }
+
+/* ── התקדמות ── */
+.ex-prog { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-md);
+  padding:18px 20px; margin-bottom:22px; }
+.ex-prog-top { display:flex; justify-content:space-between; align-items:baseline;
+  margin-bottom:12px; gap:12px; flex-wrap:wrap; }
+.ex-prog-n { font-size:22px; font-weight:650; letter-spacing:-.02em; }
+.ex-prog-top small { font-size:13px; color:var(--text-secondary); margin-inline-start:6px; }
+.ex-prog-side { font-size:13px; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+.ex-bar { height:8px; background:var(--bg-subtle); border-radius:var(--r-pill); overflow:hidden; display:flex; }
+.ex-bar i { display:block; height:100%; transition:width var(--t-glide); }
+.ex-bar .ok { background:var(--success); }
+.ex-bar .auto { background:var(--dom-spend-lite, #F9A8D4); }
+.ex-legend { display:flex; gap:16px; margin-top:10px; font-size:12px;
+  color:var(--text-secondary); flex-wrap:wrap; }
+.ex-legend span { display:flex; align-items:center; gap:6px; }
+.ex-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.ex-dot.ok { background:var(--success); }
+.ex-dot.auto { background:var(--dom-spend-lite, #F9A8D4); }
+.ex-dot.pend { background:var(--bg-subtle); box-shadow:inset 0 0 0 1px var(--border); }
+
+/* ── כרטיס קבוצה ── */
+.ex-sect { font-size:12px; font-weight:650; color:var(--text-muted); letter-spacing:.04em;
+  margin:26px 0 10px; }
+.ex-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--r-md);
+  margin-bottom:12px; overflow:hidden;
+  transition:opacity .38s, transform .38s, margin .38s, max-height .38s; }
+.ex-card.gone { opacity:0; transform:translateY(-8px) scale(.98); max-height:0; margin-bottom:0; border-width:0; }
+.ex-c-head { display:flex; align-items:center; gap:12px; padding:16px 18px; cursor:pointer; user-select:none; }
+.ex-c-head:hover { background:#FAFAFB; }
+.ex-chev { color:var(--text-muted); transition:transform var(--t-press); flex:none; font-size:12px; }
+.ex-card.open .ex-chev { transform:rotate(-90deg); }
+.ex-c-title { flex:1; min-width:0; }
+.ex-c-name { font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ex-c-meta { color:var(--text-secondary); font-size:12.5px; margin-top:3px; }
+.ex-c-amt { font-weight:650; font-size:16px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+
+.ex-pill { font-size:11px; font-weight:600; padding:3px 9px; border-radius:var(--r-pill); white-space:nowrap; }
+.ex-pill.high { background:#E6F4EA; color:var(--success); }
+.ex-pill.low  { background:#FEF7E0; color:#B06000; }
+.ex-pill.solo { background:var(--bg-subtle); color:var(--text-secondary); }
+
+.ex-body { display:none; border-top:1px solid var(--border); padding:14px 18px 18px; }
+.ex-card.open .ex-body { display:block; }
+.ex-why { font-size:12.5px; color:var(--text-secondary); background:var(--bg-subtle);
+  padding:9px 12px; border-radius:var(--r-xs); margin-bottom:14px; line-height:1.45; }
+.ex-why b { color:var(--text-primary); font-weight:600; }
+.ex-why.warn { background:#FEF7E0; color:#7A4F00; }
+
+.ex-mem { display:flex; align-items:center; gap:11px; padding:9px 10px;
+  border-radius:var(--r-xs); cursor:pointer; }
+.ex-mem:hover { background:var(--bg-subtle); }
+.ex-mem input { width:17px; height:17px; accent-color:var(--dom-spend); cursor:pointer; flex:none; margin:0; }
+.ex-mem-n { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ex-mem-r { color:var(--text-muted); font-size:12px; white-space:nowrap; }
+.ex-mem-a { font-variant-numeric:tabular-nums; font-weight:550; white-space:nowrap;
+  min-width:74px; text-align:start; }
+.ex-mem.off .ex-mem-n { color:var(--text-muted); text-decoration:line-through; text-decoration-color:#CBD5E1; }
+.ex-mem.off .ex-mem-a, .ex-mem.off .ex-mem-r { color:var(--text-muted); }
+
+.ex-foot { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:14px;
+  border-top:1px dashed var(--border); flex-wrap:wrap; }
+.ex-foot select { font:inherit; font-size:13px; padding:9px 12px; border:1px solid var(--border);
+  border-radius:var(--r-sm); background:var(--bg-surface); color:var(--text-primary);
+  cursor:pointer; min-width:126px; }
+.ex-foot select:focus { outline:2px solid var(--dom-spend-lite, #F9A8D4); outline-offset:1px;
+  border-color:var(--dom-spend); }
+.ex-rule { display:flex; align-items:center; gap:7px; font-size:12.5px;
+  color:var(--text-secondary); cursor:pointer; }
+.ex-rule input { accent-color:var(--dom-spend); width:15px; height:15px; margin:0; }
+.ex-go { margin-inline-start:auto; border:0; background:var(--dom-spend); color:#fff; font:inherit;
+  font-weight:600; font-size:13px; padding:10px 20px; border-radius:var(--r-pill); cursor:pointer;
+  transition:transform var(--t-press), background var(--t-press); }
+.ex-go:hover { background:#BE185D; }
+.ex-go:active { transform:scale(.96); }
+.ex-go:disabled { background:var(--bg-subtle); color:var(--text-muted); cursor:not-allowed; transform:none; }
+
+/* ── מסך ההוצאות ── */
+.ex-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:12px; margin-bottom:22px; }
+.ex-kpi { background:var(--bg-surface); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:16px 18px; }
+.ex-kpi .l { font-size:12px; color:var(--text-secondary); }
+.ex-kpi .v { font-size:23px; font-weight:650; margin-top:5px; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; }
+.ex-kpi .d { font-size:11.5px; color:var(--text-muted); margin-top:3px; }
+
+.ex-panel { background:var(--bg-surface); border:1px solid var(--border);
+  border-radius:var(--r-md); padding:20px; margin-bottom:14px; }
+.ex-panel h3 { margin:0 0 16px; font-size:14px; font-weight:650; }
+.ex-panel-head { display:flex; align-items:center; justify-content:space-between;
+  gap:12px; flex-wrap:wrap; }
+.ex-panel-head h3 { margin:0 0 12px; }
+.ex-basis { display:flex; gap:4px; background:var(--bg-subtle); padding:3px;
+  border-radius:var(--r-pill); margin-bottom:12px; }
+.ex-basis button { border:0; background:transparent; font:inherit; font-size:12px; padding:6px 12px;
+  border-radius:var(--r-pill); cursor:pointer; color:var(--text-secondary); }
+.ex-basis button.on { background:var(--bg-surface); color:var(--dom-spend); font-weight:600; }
+
+.ex-mo { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.ex-mo button { border:1px solid var(--border); background:var(--bg-surface); font:inherit;
+  font-size:12.5px; padding:7px 14px; border-radius:var(--r-pill); cursor:pointer;
+  color:var(--text-secondary); }
+.ex-mo button.on { background:#FDF2F8; border-color:var(--dom-spend-lite,#F9A8D4);
+  color:var(--dom-spend); font-weight:600; }
+
+.ex-row { display:grid; grid-template-columns:118px 1fr 92px; align-items:center;
+  gap:12px; margin-bottom:9px; }
+.ex-row .nm { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ex-track { height:22px; background:var(--bg-subtle); border-radius:var(--r-xs); overflow:hidden; }
+/* display:block קריטי — <i> הוא inline ו-width לא חל עליו. הבאג הזה
+   גרם לכל הפסים להיראות זהים באב-הטיפוס. */
+.ex-fill { display:block; height:100%; border-radius:var(--r-xs); transition:width var(--t-glide); }
+.ex-row .vl { text-align:start; font-variant-numeric:tabular-nums; font-weight:550; font-size:13px; }
+
+.ex-inst { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center;
+  padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.ex-inst:last-of-type { border-bottom:0; }
+.ex-inst .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ex-inst .pr { color:var(--text-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.ex-inst .vl { font-weight:600; font-variant-numeric:tabular-nums; min-width:78px; text-align:start; }
+
+.ex-note { font-size:12px; color:var(--text-muted); margin-top:14px; line-height:1.5; }
+.ex-empty { text-align:center; padding:44px 20px; color:var(--text-secondary); }
+.ex-empty b { display:block; font-size:19px; color:var(--text-primary); margin-bottom:6px; font-weight:600; }
+.ex-btn { margin-top:14px; border:0; background:var(--dom-spend); color:#fff; font:inherit;
+  font-weight:600; padding:9px 20px; border-radius:var(--r-pill); cursor:pointer; }
+
+@media (max-width:640px) {
+  .ex-c-head { padding:14px; }
+  .ex-row { grid-template-columns:92px 1fr 78px; gap:9px; }
+  .ex-go { width:100%; margin:4px 0 0; }
+  .ex-foot select { flex:1; }
+  .ex-kpi .v { font-size:20px; }
+}

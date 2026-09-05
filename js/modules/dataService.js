@@ -387,6 +387,38 @@ const DataService = (() => {
     return data;
   }
 
+  /* ---- הוצאות אשראי ----
+     מחזיר את הטאב כמו שהוא (values), והלקוח מפענח לפי שמות כותרות.
+     המטמון קצר בכוונה: אחרי אישור סיווג הנתון חייב להתרענן.            */
+  async function getExpenses(force = false) {
+    const key = 'expenses', now = Date.now(), TTL = 30 * 1000;
+    if (!force && _cache[key] && (now - _lastFetch[key]) < TTL) return _cache[key];
+    const data = await _fetch({ resource: 'expenses' });
+    _cache[key] = data; _lastFetch[key] = now;
+    return data;
+  }
+
+  /* רשימת הקטגוריות — מקור אמת יחיד לכל הבוררים במסך.
+     **נכשל בשקט בכוונה:** שרת שעוד לא נפרס עם הטאב יחזיר שגיאה,
+     והלקוח נופל לרשימת ברירת המחדל במקום להציג מסך שגיאה.             */
+  async function getCategories() {
+    try {
+      const d = await _fetch({ resource: 'categories' });
+      const v = d && d.values;
+      if (!v || v.length < 2) return null;
+      const H = v[0].map(x => String(x || '').trim());
+      const ci = H.indexOf('Category'), si = H.indexOf('Subcategory'), ai = H.indexOf('Active');
+      if (ci < 0) return null;
+      return v.slice(1)
+        .filter(r => String(r[ci] || '').trim() && (ai < 0 || String(r[ai]).toLowerCase() !== 'false'))
+        .map(r => ({ category: String(r[ci]).trim(), subcategory: si >= 0 ? String(r[si] || '').trim() : '' }));
+    } catch (e) {
+      if (e && e.unauthorized) throw e;
+      return null;
+    }
+  }
+
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
-           getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData, clearCache, login, post };
+           getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData,
+           getExpenses, getCategories, clearCache, login, post };
 })();
