@@ -340,7 +340,7 @@ const DataService = (() => {
       delete _cache[key]; delete _lastFetch[key];
       if (key === 'transactions') try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
     } else {
-      _cache = {}; _lastFetch = {}; _cacheInfo = null; _noHistoryCache = false;
+      _cache = {}; _lastFetch = {}; _cacheInfo = null; _noHistoryCache = false; _fxHist = null;
       try { localStorage.removeItem(LS_KEY_TXN); } catch (_) {}
     }
   }
@@ -349,6 +349,26 @@ const DataService = (() => {
   async function getFxRate() {
     const health = await getHealth();
     return health?.fx?.rate ?? null;
+  }
+
+  /* ---- היסטוריית שער דולר/שקל ----
+     1,606 שערים יומיים מ-2022, ~22KB, נקראים פעם אחת לכל טעינה.
+     **נכשל בשקט בכוונה:** שרת שעוד לא נפרס עם `fx_history` יחזיר שגיאה,
+     והחזרת סדרה ריקה מחזירה את המנוע לשער היום — בדיוק ההתנהגות הקודמת.
+     גרף שמצויר לפי שער היום גרוע מגרף מדויק, אבל טוב לאין ערוך ממסך שגיאה.
+     `unauthorized` הוא היוצא מן הכלל היחיד שממשיך למעלה.                 */
+  let _fxHist = null;
+  async function getFxHistory() {
+    if (_fxHist) return _fxHist;
+    try {
+      const d = await _fetch({ resource: "fx_history" });
+      _fxHist = (d && Array.isArray(d.d) && Array.isArray(d.r) && d.d.length)
+        ? { d: d.d, r: d.r } : { d: [], r: [] };
+    } catch (e) {
+      if (e && e.unauthorized) throw e;
+      _fxHist = { d: [], r: [] };
+    }
+    return _fxHist;
   }
 
   /* ---- Public: real-time stock prices (from REALTIMEDATA sheet) ----
@@ -368,5 +388,5 @@ const DataService = (() => {
   }
 
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
-           getHistoryCacheInfo, getFxRate, getRealTimeData, clearCache, login, post };
+           getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData, clearCache, login, post };
 })();

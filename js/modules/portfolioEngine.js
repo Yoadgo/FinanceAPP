@@ -260,8 +260,30 @@ const PortfolioEngine = (() => {
        • realized   — cumulative realized P&L from closed round-trips.
        • unrealized — holdings market value − cost basis, valued with each
                       symbol's split-adjusted historical close on that date.
-     historyMap: { SYMBOL: [{date, close}, ...] }. fxRate converts ILS flows.
+     historyMap: { SYMBOL: [{date, close}, ...] }. fxSeries (אופציונלי) ממיר
+     כל תזרים שקלי לפי השער של אותו יום; בלעדיו — fxRate הקבוע.
      ══════════════════════════════════════════════════ */
+  /* ── שער לפי תאריך ──
+     כל המרת שקל→דולר בגרף חייבת להיעשות **בשער של אותו יום**. הפקדה של
+     ₪50,000 באוגוסט 2025 (שער 3.35) היא $14,925 — לא $16,600 לפי שער
+     היום. בטווח שהנתונים מכסים השער נע 2.8005–4.07615, ולכן זה לא ניואנס:
+     זה הקו שכל תשואה בגרף נמדדת מולו.
+     בלי סדרה — חוזרים לשער הקבוע, בדיוק כמו קודם.                        */
+  function _mkFxAt(series, fallback) {
+    const d = series && series.d, r = series && series.r;
+    if (!d || !d.length) return function () { return fallback; };
+    return function (t) {
+      const day = Math.floor(t / 86400000);
+      if (day <= d[0]) return r[0];
+      let lo = 0, hi = d.length - 1, best = r[0];
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (d[mid] <= day) { best = r[mid]; lo = mid + 1; } else hi = mid - 1;
+      }
+      return best;
+    };
+  }
+
   function _usdAmt(r, fx) {
     const f = n(r.TotalFX);
     if (Math.abs(f) > 0.001) return Math.abs(f);
@@ -270,7 +292,8 @@ const PortfolioEngine = (() => {
     return 0;
   }
 
-  function computeEquityCurve(txns, historyMap, fxRate, step = 'month') {
+  function computeEquityCurve(txns, historyMap, fxRate, step = 'month', fxSeries = null) {
+    const fxAt = _mkFxAt(fxSeries, fxRate);
     if (!txns || !txns.length) return [];
     const relevant = _sorted(txns.filter(_isRelevant)).filter(r => {
       const s = (r.Symbol || '').toString().trim().toUpperCase();
@@ -315,8 +338,8 @@ const PortfolioEngine = (() => {
     const invDeltas = [], adjDeltas = [];
     txns.forEach(r => {
       const t = new Date(r.Date).getTime(); if (!isFinite(t)) return;
-      const sub = r.subCategory, usd = _usdAmt(r, fxRate);
-      if (sub === 'DEPOSIT') { const ils = n(r.TotalILS); const v = fxRate ? ils / fxRate : ils; if (Math.abs(v) > 0.0001) invDeltas.push({ t, d: v }); }
+      const sub = r.subCategory, fxT = fxAt(t), usd = _usdAmt(r, fxT);
+      if (sub === 'DEPOSIT') { const ils = n(r.TotalILS); const v = fxT ? ils / fxT : ils; if (Math.abs(v) > 0.0001) invDeltas.push({ t, d: v }); }
       else if (sub === 'CASH_DIVIDEND' || sub === 'CREDIT_INTEREST' || sub === 'TAX_REFUND') adjDeltas.push({ t, d: usd });
       else if (sub === 'TRADE_COMMISSION' || sub === 'MGMT_FEE' || sub === 'DEBIT_INTEREST' || sub === 'CAPITAL_GAIN_TAX' || sub === 'DIVIDEND_TAX' || sub === 'TAX_PAYMENT') adjDeltas.push({ t, d: -usd });
     });
@@ -386,7 +409,7 @@ const PortfolioEngine = (() => {
       while (ii < invDeltas.length && invDeltas[ii].t <= gt) invested += invDeltas[ii++].d;
       while (ai < adjDeltas.length && adjDeltas[ai].t <= gt) cashAdj += adjDeltas[ai++].d;
       const cashIls = Object.values(cashByPort).reduce((s, v) => s + v, 0);
-      const cash = fxRate ? cashIls / fxRate : cashIls;
+      const cash = fxAt(gt) ? cashIls / fxAt(gt) : cashIls;
       while (ri < closedAsc.length && closedAsc[ri].t <= gt) {
         realized += closedAsc[ri].pnl;
         realBySym[closedAsc[ri].symbol] = (realBySym[closedAsc[ri].symbol] || 0) + closedAsc[ri].pnl;

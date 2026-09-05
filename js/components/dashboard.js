@@ -58,6 +58,9 @@ Pages.dashboard = (() => {
         DataService.getFxRate().catch(() => null),
       ]);
       _fxRate = fx; if (_fxRate) App.setFxRate(_fxRate);
+      /* היסטוריית השער — נטענת פעם אחת ומשמשת את שני שלבי הציור.
+         נכשלת בשקט לסדרה ריקה, ואז המנוע חוזר לשער היום. */
+      const fxSeries = await DataService.getFxHistory().catch(() => null);
 
       const enriched = Classifier.enrichAll(txns);
       const rt = _rtMap(rtData);
@@ -85,7 +88,7 @@ Pages.dashboard = (() => {
          נכונים לחלוטין — ולכן גם `netWorth` זהה בשני השלבים ולא
          מרצד. מה שחסר בשלב א' הוא הגרף בלבד, ובמקומו מוצג שלד.
          לפני השינוי המסך כולו המתין לכ-24 קבצי היסטוריה לפני שצייר מספר אחד. */
-      const quick    = PortfolioEngine.computeEquityCurve(enriched, {}, _fxRate, 'day');
+      const quick    = PortfolioEngine.computeEquityCurve(enriched, {}, _fxRate, 'day', fxSeries);
       const lastPt   = quick.length ? quick[quick.length - 1] : { invested: 0, cashAdj: 0 };
       const invested = lastPt.invested || 0;
       const cashAdj  = lastPt.cashAdj || 0;
@@ -118,7 +121,7 @@ Pages.dashboard = (() => {
       try { historyMap = await DataService.getStockHistories(symbols); }
       catch (_) { historyMap = {}; }
       if (token !== _loadToken || !_state) return;
-      _state.curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day');
+      _state.curve = PortfolioEngine.computeEquityCurve(enriched, historyMap, _fxRate, 'day', fxSeries);
       _state.curveLoading = false;
       _paint();
     } catch (err) {

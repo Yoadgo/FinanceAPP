@@ -4,3 +4,6 @@
 # Claude Code — עותקי עבודה מקומיים והגדרות מקומיות, לא שייכים לריפו
 .claude/worktrees/
 .claude/settings.local.json
+
+# נתוני מבחן אמיתיים — שמות סוחרים וסכומים. הריפו ציבורי; אלה לא נכנסים אליו.
+apps-script/tests/fixtures.json

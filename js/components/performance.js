@@ -10,6 +10,7 @@ Pages.performance = (() => {
   let _histMap = null;         // cache: symbol → price history (shared)
   let _lastBuckets = [];       // last rendered returns buckets (for tooltip lookup)
   let _fxRate = null;
+  let _fxSeries = null;      // היסטוריית שער; null ⇒ המנוע נופל לשער היום
   let _filter = 'all';        // closed-trades portfolio filter
   let _tab = 'trades';        // 'trades' | 'returns' | 'tax'
   let _range = 'year';        // returns view range: day | quarter | year | all
@@ -47,6 +48,7 @@ Pages.performance = (() => {
         DataService.getFxRate().catch(() => null),
       ]);
       _fxRate = fx; if (_fxRate) App.setFxRate(_fxRate);
+      _fxSeries = await DataService.getFxHistory().catch(() => null);
       _enriched = Classifier.enrichAll(txns);
       _trades = PortfolioEngine.computeClosedTrades(_enriched);
       _tax = Analytics.taxSummary(_enriched, _fxRate);
@@ -190,7 +192,7 @@ Pages.performance = (() => {
       await Promise.all(syms.map(async s => { try { _histMap[s] = await DataService.getStockHistory(s); } catch (_) { _histMap[s] = []; } }));
     }
     const src = _retPort === 'all' ? _enriched : _enriched.filter(r => (r.Portfolio || '').trim() === _retPort);
-    _daily = _dailyByPort[_retPort] = PortfolioEngine.computeEquityCurve(src, _histMap, _fxRate, 'day');
+    _daily = _dailyByPort[_retPort] = PortfolioEngine.computeEquityCurve(src, _histMap, _fxRate, 'day', _fxSeries);
   }
 
   function _bucketKey(t) {
