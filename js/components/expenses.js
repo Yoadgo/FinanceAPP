@@ -204,7 +204,8 @@ Pages.expenses = (() => {
   }
 
   function _paintSpend(s) {
-    const months = s.byMonth.map(x => x.month).sort();
+    const mk = m => String(m).slice(3) + String(m).slice(0, 2);   // MM/YYYY -> YYYYMM
+    const months = s.byMonth.map(x => x.month).sort((a, b) => mk(a).localeCompare(mk(b)));
     const sm = ExpensesEngine.summarize(_rows, { basis: _basis, month: _month, washPairs: _wash });
     const inst = ExpensesEngine.openInstallments(_rows);
     const owed = inst.reduce((a, x) => a + x.remaining, 0);
@@ -228,7 +229,7 @@ Pages.expenses = (() => {
           </div></div>
         <div class="ex-mo">
           <button class="${_month==='all'?'on':''}" data-m="all">כל התקופה</button>
-          ${months.map(m => `<button class="${_month===m?'on':''}" data-m="${esc(m)}">${esc(String(m).slice(0,5))}</button>`).join('')}
+          ${months.map(m => `<button class="${_month===m?'on':''}" data-m="${esc(m)}">${esc(String(m))}</button>`).join('')}
         </div>
         ${rows.map(c => `<div class="ex-row">
             <div class="nm">${esc(c.cat)}</div>

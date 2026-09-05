@@ -40,7 +40,7 @@ ok('זוג = סכום הפוך', w.every(p=>Math.abs(p.credit.charge+p.debit.cha
 
 const sAll=E.summarize(rows,{});
 ok('סה"כ ₪80,972.76', Math.abs(sAll.total+sAll.washed-80972.76)<0.02, sAll.total+' + wash '+sAll.washed);
-const BANK={'02/07/2026':34694.41,'02/08/2026':23363.59,'02/09/2026':22914.76};
+const BANK={'07/2026':34694.41,'08/2026':23363.59,'09/2026':22914.76};
 for(const m in BANK){
   const sm=E.summarize(rows,{month:m});
   const got=sm.total + sm.washed;

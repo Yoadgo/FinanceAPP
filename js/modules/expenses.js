@@ -231,7 +231,7 @@ const ExpensesEngine = (function () {
 
     rows.forEach(function (r) {
       if (wash[r.id]) { washed += Math.abs(r.charge); return; }
-      var key = basis === 'billing' ? r.billing : monthKey(r.date);
+      var key = monthKey(basis === 'billing' ? r.billing : r.date);
       if (opts.month && opts.month !== 'all' && key !== opts.month) return;
       rowsUsed++;
       byMonth[key] = round2((byMonth[key] || 0) + r.charge);
@@ -274,6 +274,14 @@ const ExpensesEngine = (function () {
 
   function dateMs(d) { return (d instanceof Date) ? d.getTime() : Date.parse(d) || 0; }
   function monthKey(d) {
+    /* המסלול הטקסטואלי קודם: 'YYYY-MM-DD' נקרא כ-UTC ובאזור שלילי
+       הוא היה מתגלגל חודש אחורה. השוואה על המחרוזת עוקפת את האזור לגמרי. */
+    if (typeof d === 'string') {
+      var iso = d.match(/^(\d{4})-(\d{2})/);            // 2026-07-02  (Date מהגיליון)
+      if (iso) return iso[2] + '/' + iso[1];
+      var il = d.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);  // 02/07/2026  (BillingMonth)
+      if (il) return ('0' + il[2]).slice(-2) + '/' + il[3];
+    }
     var x = (d instanceof Date) ? d : new Date(d);
     if (isNaN(x.getTime())) return '—';
     return ('0' + (x.getMonth() + 1)).slice(-2) + '/' + x.getFullYear();
