@@ -50,7 +50,7 @@ const ExpensesEngine = (function () {
         amount: n(v[idx.Amount]), charge: n(v[idx.Charge]),
         note: s(v[idx.Note]), noteKind: s(v[idx.NoteKind]),
         installment: n(v[idx.Installment]), installments: n(v[idx.Installments]),
-        cat: s(v[idx.Category]), sub: s(v[idx.Subcategory]),
+        cat: s(v[idx.Category]), sub: s(v[idx.Subcategory]), tag: s(v[idx.Tag]),
         status: s(v[idx.Status]) || 'pending',
         row: r + 1
       });
@@ -226,15 +226,20 @@ const ExpensesEngine = (function () {
     var wash = {};
     (opts.washPairs || []).forEach(function (p) { wash[p.credit.id] = 1; wash[p.debit.id] = 1; });
 
-    var byCat = {}, byMonth = {}, buckets = {};
+    var byCat = {}, byMonth = {}, byTag = {}, buckets = {};
     var consume = 0, transfer = 0, pending = 0, washed = 0, rowsUsed = 0;
 
     rows.forEach(function (r) {
       if (wash[r.id]) { washed += Math.abs(r.charge); return; }
       var key = monthKey(basis === 'billing' ? r.billing : r.date);
       if (opts.month && opts.month !== 'all' && key !== opts.month) return;
+      if (opts.tag && opts.tag !== 'all' && r.tag !== opts.tag) return;
       rowsUsed++;
       byMonth[key] = round2((byMonth[key] || 0) + r.charge);
+
+      /* התג נספר לפני חלוקת הדליים: טיול אוסף גם קניות וגם מסעדות,
+         וסכום הטיול חסר משמעות אם חלק מהשורות נופל בדרך. */
+      if (r.tag) byTag[r.tag] = round2((byTag[r.tag] || 0) + r.charge);
 
       var b = NON_CONSUME[r.cat] || BUCKET.consume;
       buckets[b] = round2((buckets[b] || 0) + r.charge);
@@ -252,6 +257,8 @@ const ExpensesEngine = (function () {
       byCat: Object.keys(byCat).map(function (k) { return { cat: k, sum: byCat[k] }; })
                .sort(function (a, b) { return b.sum - a.sum; }),
       byMonth: Object.keys(byMonth).map(function (k) { return { month: k, sum: byMonth[k] }; }),
+      byTag: Object.keys(byTag).map(function (k) { return { tag: k, sum: byTag[k] }; })
+               .sort(function (a, b) { return b.sum - a.sum; }),
       buckets: buckets
     };
   }

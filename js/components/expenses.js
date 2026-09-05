@@ -62,6 +62,16 @@ Pages.expenses = (() => {
     'ביטוח':'#D97706','קניות':'#DC2626','בית':'#059669','טיפוח':'#DB2777','נסיעות':'#0284C7',
     'חינוך':'#65A30D','העברות':'#64748B','הטבות':'#CA8A04','בהמתנה':'#CBD5E1'};
 
+  /* קטגוריה שיועד יצר בעצמו אינה ברשימה. צבע נופל אחד לכולן היה נותן
+     לכל קטגוריה חדשה בדיוק את האפור של "בהמתנה" — שתי משמעויות שונות
+     באותו צבע. גוון נגזר מהשם: יציב בין טעינות, ושונה בין שמות.      */
+  function _catColor(name) {
+    if (PAL[name]) return PAL[name];
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return 'hsl(' + h + ' 62% 45%)';
+  }
+
   function render(container) {
     _container = container; _tab = 'sort'; _month = 'all';
     container.innerHTML = FA.skel ? FA.skel.tablePage(8, 4) : '<div class="ex-load">טוען…</div>';
@@ -124,7 +134,7 @@ Pages.expenses = (() => {
           </div>
         </div>
         ${_tab === 'sort' ? _paintSort(s) : _paintSpend(s)}
-      </div>`;
+      </div>${_tagList()}`;
     _wire();
   }
 
@@ -157,6 +167,10 @@ Pages.expenses = (() => {
       </div></div>`;
   }
 
+  /* הכרטיס נותן שתי רמות: הסוחר (מהיר) והשורה (מדויק). מקור האמת
+     לבחירה הוא **תמיד מפת השורות** `c._sel`; תיבת הסוחר היא קיצור
+     שמסמן או מנקה את השורות שלו. שני מנגנוני בחירה מקבילים היו נפרדים
+     בשקט ברגע שנוגעים בשורה בודדת.                                    */
   function _card(item, key) {
     const solo = !item.members;
     const mem = solo ? [item] : item.members;
@@ -183,25 +197,78 @@ Pages.expenses = (() => {
             <span class="ex-mem-n">${esc(m.norm)}</span>
             <span class="ex-mem-r">${m.rows} ${m.rows===1?'שורה':'שורות'}</span>
             <span class="ex-mem-a">${money(m.total)}</span></label>`).join('')}
+        <button class="ex-detail" type="button">פירוט שורות — לדייק אחת-אחת ▾</button>
+        <div class="ex-rows" hidden></div>
         <div class="ex-foot">
           <select class="ex-cat">${_catOpts(sug.cat)}</select>
           <select class="ex-sub">${_subOpts(sug.cat, sug.sub)}</select>
+          <input class="ex-tagin" list="ex-taglist" placeholder="תג — טיול או אירוע (לא חובה)">
           <label class="ex-rule"><input type="checkbox" checked> צור כלל לעתיד</label>
           <button class="ex-go">אשר</button>
+        </div>
+        <div class="ex-new" hidden>
+          <span class="ex-new-lbl"></span>
+          <input class="ex-new-in" placeholder="שם חדש">
+          <button class="ex-new-ok" type="button">הוסף</button>
+          <button class="ex-new-x" type="button">ביטול</button>
+          <span class="ex-new-msg"></span>
         </div>
       </div></div>`;
   }
 
-  function _catOpts(sel) {
-    const m = _catMap();
-    return '<option value="">קטגוריה…</option>' +
-      Object.keys(m).map(c => `<option${c===sel?' selected':''}>${esc(c)}</option>`).join('');
+  /* שורות הכרטיס: רק מה שעדיין לא מסווג, בסדר תאריך. הסלקטים של השורה
+     מתחילים ריקים — "כמו הקבוצה" — כדי שמי שלא נוגע יקבל בדיוק את
+     ההתנהגות הישנה, ומי שכן נוגע יחרוג רק בשורה שבחר.                 */
+  function _rowsOf(item) {
+    const names = {};
+    _memsOf(item).forEach(m => { names[m.norm] = 1; });
+    return _rows.filter(r => names[r.norm] && !r.cat)
+                .sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
   }
-  function _subOpts(cat, sel) {
-    const m = _catMap();
-    if (!cat || !m[cat] || !m[cat].length) return '<option value="">—</option>';
-    return '<option value="">—</option>' + m[cat].map(x => `<option${x===sel?' selected':''}>${esc(x)}</option>`).join('');
+
+  function _dm(d) {
+    const x = new Date(d);
+    return isNaN(x.getTime()) ? '—'
+      : ('0' + x.getDate()).slice(-2) + '/' + ('0' + (x.getMonth() + 1)).slice(-2);
   }
+
+  function _rowsHtml(item, c) {
+    const sel = c._sel || {};
+    return _rowsOf(item).map(r => `<div class="ex-r${sel[r.id] ? '' : ' off'}" data-id="${esc(r.id)}">
+        <label class="ex-r-pick"><input type="checkbox" class="ex-r-b" ${sel[r.id] ? 'checked' : ''}></label>
+        <span class="ex-r-d">${_dm(r.date)}</span>
+        <span class="ex-r-n" title="${esc(r.merchant)}">${esc(r.norm)}</span>
+        <span class="ex-r-note">${esc(r.installments > 1 ? `תשלום ${r.installment}/${r.installments}` : (r.noteKind === 'refund' ? 'זיכוי' : ''))}</span>
+        <span class="ex-r-a">${money(r.charge)}</span>
+        <select class="ex-r-cat">${_catOpts('', true)}</select>
+        <select class="ex-r-sub"><option value="">—</option></select>
+        <input class="ex-r-tag" list="ex-taglist" placeholder="תג">
+      </div>`).join('');
+  }
+
+  function _catOpts(sel, rowLevel) {
+    const m = _catMap();
+    return `<option value="">${rowLevel ? 'כמו הקבוצה' : 'קטגוריה…'}</option>` +
+      Object.keys(m).map(c => `<option${c===sel?' selected':''}>${esc(c)}</option>`).join('') +
+      (rowLevel ? '' : '<option value="__new">+ קטגוריה חדשה…</option>');
+  }
+  function _subOpts(cat, sel, rowLevel) {
+    const m = _catMap();
+    const head = `<option value="">${rowLevel ? '—' : '—'}</option>`;
+    if (!cat) return head;
+    const list = (m[cat] || []).map(x => `<option${x===sel?' selected':''}>${esc(x)}</option>`).join('');
+    return head + list + (rowLevel ? '' : '<option value="__new">+ תת-קטגוריה חדשה…</option>');
+  }
+
+  /* כל התגים שכבר בשימוש — משלימים אוטומטית, כדי ששני טיולים לא ייכתבו
+     בשתי צורות ("יוון 08.26" ו-"יוון אוגוסט") ויתפצלו לשני סכומים. */
+  function _tagList() {
+    const seen = {};
+    _rows.forEach(r => { if (r.tag) seen[r.tag] = 1; });
+    return `<datalist id="ex-taglist">${Object.keys(seen).sort()
+      .map(t => `<option value="${esc(t)}">`).join('')}</datalist>`;
+  }
+
 
   function _paintSpend(s) {
     const mk = m => String(m).slice(3) + String(m).slice(0, 2);   // MM/YYYY -> YYYYMM
@@ -233,12 +300,19 @@ Pages.expenses = (() => {
         </div>
         ${rows.map(c => `<div class="ex-row">
             <div class="nm">${esc(c.cat)}</div>
-            <div class="ex-track"><i class="ex-fill" style="width:${Math.max(1.5, c.sum/max*100)}%;background:${PAL[c.cat]||'#94A3B8'}"></i></div>
+            <div class="ex-track"><i class="ex-fill" style="width:${Math.max(1.5, c.sum/max*100)}%;background:${_catColor(c.cat)}"></i></div>
             <div class="vl">${money(c.sum)}</div></div>`).join('')}
         <div class="ex-note">${sm.pending > 1
           ? `${money(sm.pending)} עדיין לא מסווגים — זה הפס האפור. כל קבוצה שתאשר מעבירה סכום ממנו לקטגוריה אמיתית.`
           : 'כל שקל מסווג. זו התמונה המלאה.'}</div>
       </div>
+      ${sm.byTag.length ? `<div class="ex-panel"><h3>לפי תג</h3>
+        ${sm.byTag.map(t => `<div class="ex-row">
+            <div class="nm">${esc(t.tag)}</div>
+            <div class="ex-track"><i class="ex-fill" style="width:${Math.max(1.5, t.sum/sm.byTag[0].sum*100)}%;background:#0284C7"></i></div>
+            <div class="vl">${money(t.sum)}</div></div>`).join('')}
+        <div class="ex-note">תג הוא ציר שני וחוצה קטגוריות — טיול אחד אוסף קניות, מסעדות ומלונות. לכן הסכומים כאן חופפים לקטגוריות שלמעלה ואינם מתחברים אליהן.</div>
+      </div>` : ''}
       ${inst.length ? `<div class="ex-panel"><h3>תשלומים פתוחים</h3>
         ${inst.slice(0,8).map(x => `<div class="ex-inst">
           <span class="nm">${esc(x.merchant)}</span>
@@ -256,57 +330,197 @@ Pages.expenses = (() => {
 
     $('.ex-card').forEach(c => {
       const item = _itemOf(c.dataset.k);
+      const mems = _memsOf(item);
+      const on = item.members ? item.confident : true;
+
+      /* מפת הבחירה נבנית פעם אחת לכרטיס, לפי אותה החלטה שקבעה את
+         תיבות הסוחר — כך שהמסך והשליחה מסכימים מהרגע הראשון. */
+      c._sel = {};
+      _rowsOf(item).forEach(r => { c._sel[r.id] = on; });
+
       c.querySelector('.ex-c-head').onclick = () => c.classList.toggle('open');
-      c.querySelectorAll('.ex-mem input').forEach(b => b.onchange = () => {
-        b.closest('.ex-mem').classList.toggle('off', !b.checked); _btn(c, item);
+
+      c.querySelectorAll('.ex-mem input').forEach((b, j) => b.onchange = () => {
+        b.closest('.ex-mem').classList.toggle('off', !b.checked);
+        const nm = mems[j].norm;
+        _rowsOf(item).forEach(r => { if (r.norm === nm) c._sel[r.id] = b.checked; });
+        _syncRows(c); _btn(c, item);
       });
+
+      const detail = c.querySelector('.ex-detail'), box = c.querySelector('.ex-rows');
+      detail.onclick = () => {
+        const open = box.hidden;
+        if (open && !box.dataset.built) { box.innerHTML = _rowsHtml(item, c); box.dataset.built = '1'; _wireRows(c, item); }
+        box.hidden = !open;
+        detail.textContent = open ? 'הסתר פירוט ▴' : 'פירוט שורות — לדייק אחת-אחת ▾';
+        _syncRows(c);
+      };
+
       const cat = c.querySelector('.ex-cat'), sub = c.querySelector('.ex-sub');
-      cat.onchange = () => { sub.innerHTML = _subOpts(cat.value); _btn(c, item); };
+      cat.onchange = () => {
+        if (cat.value === '__new') { _openNew(c, item, 'cat'); return; }
+        sub.innerHTML = _subOpts(cat.value); _btn(c, item);
+      };
+      sub.onchange = () => {
+        if (sub.value === '__new') { _openNew(c, item, 'sub'); return; }
+        _btn(c, item);
+      };
       c.querySelector('.ex-go').onclick = () => _approve(c, item);
+      _wireNew(c, item);
       _btn(c, item);
     });
+  }
+
+  function _wireRows(c, item) {
+    c.querySelectorAll('.ex-r').forEach(el => {
+      const id = el.dataset.id;
+      el.querySelector('.ex-r-b').onchange = e => {
+        c._sel[id] = e.target.checked;
+        el.classList.toggle('off', !e.target.checked);
+        _syncMems(c, item); _btn(c, item);
+      };
+      const rc = el.querySelector('.ex-r-cat'), rs = el.querySelector('.ex-r-sub');
+      rc.onchange = () => { rs.innerHTML = _subOpts(rc.value, '', true); _btn(c, item); };
+    });
+  }
+
+  /* אחרי שינוי בסוחר — לסמן מחדש את תיבות השורה; אחרי שינוי בשורה —
+     לעדכן את תיבת הסוחר, כולל מצב ביניים. בלי זה המסך מציג סוחר מסומן
+     שחלק משורותיו לא ייכתבו, וזה בדיוק סוג הפער שמסתיים בהפתעה.      */
+  function _syncRows(c) {
+    c.querySelectorAll('.ex-r').forEach(el => {
+      const v = !!c._sel[el.dataset.id];
+      el.querySelector('.ex-r-b').checked = v;
+      el.classList.toggle('off', !v);
+    });
+  }
+
+  function _syncMems(c, item) {
+    const mems = _memsOf(item), all = _rowsOf(item);
+    c.querySelectorAll('.ex-mem input').forEach((b, j) => {
+      const mine = all.filter(r => r.norm === mems[j].norm);
+      const nOn = mine.filter(r => c._sel[r.id]).length;
+      b.checked = nOn > 0;
+      b.indeterminate = nOn > 0 && nOn < mine.length;
+      b.closest('.ex-mem').classList.toggle('off', nOn === 0);
+    });
+  }
+
+  /* יצירת קטגוריה תוך כדי סיווג. נשמרת בגיליון מיד — הבורר לא מציג
+     ערך שאינו קיים בשרת, כי ערך כזה היה נעלם בטעינה הבאה.            */
+  function _openNew(c, item, kind) {
+    const box = c.querySelector('.ex-new');
+    const catSel = c.querySelector('.ex-cat');
+    if (kind === 'sub' && !catSel.value) {
+      catSel.value = ''; c.querySelector('.ex-sub').value = '';
+      box.querySelector('.ex-new-msg').textContent = 'בחר קטגוריה קודם.';
+      box.hidden = false; return;
+    }
+    box.dataset.kind = kind;
+    box.querySelector('.ex-new-lbl').textContent =
+      kind === 'cat' ? 'קטגוריה חדשה:' : `תת-קטגוריה חדשה תחת "${catSel.value}":`;
+    box.querySelector('.ex-new-msg').textContent = '';
+    box.querySelector('.ex-new-in').value = '';
+    box.hidden = false;
+    box.querySelector('.ex-new-in').focus();
+    (kind === 'cat' ? catSel : c.querySelector('.ex-sub')).value = '';
+    _btn(c, item);
+  }
+
+  function _wireNew(c, item) {
+    const box = c.querySelector('.ex-new');
+    const inp = box.querySelector('.ex-new-in'), msg = box.querySelector('.ex-new-msg');
+    box.querySelector('.ex-new-x').onclick = () => { box.hidden = true; };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); box.querySelector('.ex-new-ok').click(); } };
+    box.querySelector('.ex-new-ok').onclick = async () => {
+      const name = inp.value.trim();
+      if (!name) { msg.textContent = 'צריך שם.'; return; }
+      const kind = box.dataset.kind;
+      const catSel = c.querySelector('.ex-cat'), subSel = c.querySelector('.ex-sub');
+      const category = kind === 'cat' ? name : catSel.value;
+      const subcategory = kind === 'cat' ? '' : name;
+      msg.textContent = 'שומר…';
+      try {
+        await DataService.post('categories.upsert', { category, subcategory });
+        DataService.clearCache && DataService.clearCache();
+        _cats = await DataService.getCategories().catch(() => _cats);
+        catSel.innerHTML = _catOpts(category);
+        catSel.value = category;
+        subSel.innerHTML = _subOpts(category, subcategory);
+        subSel.value = subcategory;
+        c.querySelectorAll('.ex-r-cat').forEach(s => { const v = s.value; s.innerHTML = _catOpts('', true); s.value = v; });
+        box.hidden = true;
+        _btn(c, item);
+      } catch (e) {
+        if (e && e.unauthorized) return;
+        msg.textContent = 'לא נשמר: ' + (e && e.message ? e.message : e);
+      }
+    };
   }
 
   function _itemOf(k) { return k[0] === 'g' ? _groups[+k.slice(1)] : _singles[+k.slice(1)]; }
   function _memsOf(item) { return item.members || [item]; }
 
   function _btn(c, item) {
-    const mems = _memsOf(item);
-    const boxes = [...c.querySelectorAll('.ex-mem input')];
-    let rows = 0, sum = 0, picked = [];
-    boxes.forEach((b, j) => { if (b.checked) { rows += mems[j].rows; sum += mems[j].total; picked.push(mems[j]); } });
-    const btn = c.querySelector('.ex-go'), cat = c.querySelector('.ex-cat').value;
-    btn.disabled = !rows || !cat || _busy[c.dataset.k];
+    const chosen = _rowsOf(item).filter(r => c._sel && c._sel[r.id]);
+    const sum = chosen.reduce((a, r) => a + r.charge, 0);
+    const cat = c.querySelector('.ex-cat').value;
+    const perRow = [...c.querySelectorAll('.ex-r')]
+      .filter(el => c._sel[el.dataset.id] && el.querySelector('.ex-r-cat').value).length;
+    /* שורה עם קטגוריה משלה עומדת בפני עצמה — לכן מותר לאשר גם בלי
+       קטגוריה קבוצתית, כל עוד לכל שורה נבחרת יש אחת.                 */
+    const uncovered = chosen.length - perRow;
+    const btn = c.querySelector('.ex-go');
+    btn.disabled = !chosen.length || (!cat && uncovered > 0) || _busy[c.dataset.k];
     btn.textContent = _busy[c.dataset.k] ? 'שומר…'
-      : !rows ? 'לא נבחר דבר' : !cat ? 'בחר קטגוריה' : `אשר ${rows} שורות · ${money(sum)}`;
-    c._picked = picked;
+      : !chosen.length ? 'לא נבחר דבר'
+      : (!cat && uncovered > 0) ? `בחר קטגוריה (${uncovered} שורות בלי)`
+      : `אשר ${chosen.length} ${chosen.length === 1 ? 'שורה' : 'שורות'} · ${money(sum)}`;
   }
 
-  /* אישור: שולח את **מזהי השורות שסומנו בפועל**, לא דפוס. הכלל נכתב
-     בנפרד ומשפיע רק על קליטות עתידיות — לא נוגע בשום שורה קיימת.      */
+  /* אישור: שולח **שורה-שורה** — מזהה, קטגוריה, תת-קטגוריה ותג. ברירת
+     המחדל לכל שורה היא בחירת הקבוצה; שורה שנגעו בה שולחת את שלה.
+     הכלל נכתב בנפרד ומשפיע רק על קליטות עתידיות.                      */
   async function _approve(c, item) {
     const cat = c.querySelector('.ex-cat').value;
     const sub = c.querySelector('.ex-sub').value;
+    const tag = c.querySelector('.ex-tagin').value.trim();
     const mkRule = c.querySelector('.ex-rule input').checked;
-    const picked = c._picked || [];
-    if (!cat || !picked.length) return;
-    const ids = [];
-    const names = {};
-    picked.forEach(m => { names[m.norm] = 1; });
-    _rows.forEach(r => { if (names[r.norm] && !r.cat) ids.push(r.id); });
-    if (!ids.length) return;
+    const chosen = _rowsOf(item).filter(r => c._sel && c._sel[r.id]);
+    if (!chosen.length) return;
+
+    const over = {};
+    c.querySelectorAll('.ex-r').forEach(el => {
+      over[el.dataset.id] = {
+        cat: el.querySelector('.ex-r-cat').value,
+        sub: el.querySelector('.ex-r-sub').value,
+        tag: el.querySelector('.ex-r-tag').value.trim(),
+      };
+    });
+
+    const items = chosen.map(r => {
+      const o = over[r.id] || {};
+      return { id: r.id,
+               category: o.cat || cat,
+               subcategory: o.cat ? o.sub : sub,
+               tag: o.tag || tag };
+    });
+    if (items.some(x => !x.category)) return;
 
     _busy[c.dataset.k] = true; _btn(c, item);
     try {
-      /* חתימת post היא (action, payload, opts) — שלושה ארגומנטים.
-         אובייקט אחד עם action בתוכו נשלח לשרת כ-action שהוא אובייקט,
-         והשרת עונה "פעולה לא מוכרת". זו הייתה שגיאת השמירה.        */
       await DataService.post('expenses.approve', {
-        ids, category: cat, subcategory: sub,
-        rule: mkRule ? { pattern: item.members ? item.token : item.norm,
-                         match: item.members ? 'contains' : 'equals', field: 'merchant' } : null,
+        items,
+        rule: mkRule && cat ? { pattern: item.members ? item.token : item.norm,
+                                match: item.members ? 'contains' : 'equals', field: 'merchant' } : null,
       }, { writeId: 'ap-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) });
-      _rows.forEach(r => { if (names[r.norm] && !r.cat) { r.cat = cat; r.sub = sub; r.status = 'ok'; } });
+      const by = {};
+      items.forEach(x => { by[x.id] = x; });
+      _rows.forEach(r => {
+        const x = by[r.id];
+        if (!x) return;
+        r.cat = x.category; r.sub = x.subcategory; r.tag = x.tag; r.status = 'ok';
+      });
       _recompute();
       c.classList.add('gone');
       setTimeout(() => { _paint(); }, 380);
@@ -316,6 +530,7 @@ Pages.expenses = (() => {
       alert('השמירה נכשלה: ' + (e && e.message ? e.message : e) + '\nשום דבר לא נכתב.');
     }
   }
+
 
   function reload() { if (_container) render(_container); }
 

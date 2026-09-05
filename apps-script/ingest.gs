@@ -35,7 +35,11 @@ var ING = {
 var EXPENSE_COLS = ['Id','Date','Card','Issuer','BillingMonth','Merchant','MerchantNorm',
   'Amount','Currency','Charge','ChargeCurrency','Note','NoteKind','Installment','Installments',
   'Category','Subcategory','Status','RuleId','Source','FileHash','SheetRow','Key','Occ',
-  'CreatedAt','UpdatedAt'];
+  'CreatedAt','UpdatedAt','Tag'];
+/* `Tag` הוא ציר שני, לא תת-קטגוריה: טיול חוצה קטגוריות (קניות, מסעדות,
+   מלונות). לו היה יושב בתת-קטגוריה, רשימת התת-סעיפים הייתה מתנפחת עם כל
+   טיול ו"כמה על קניות" היה מחייב איחוד ידני. `ensureSheetWithCols_`
+   מוסיף אותו לגיליון קיים בלי לגעת בשורות — לכן הוא בסוף המערך. */
 
 var IMPORT_COLS = ['Id','At','FileId','FileName','Hash','Kind','BillingMonth','Sections',
   'Balanced','RowsParsed','RowsAdded','RowsSkipped','Warnings','Status'];
@@ -384,7 +388,9 @@ function ingestInbox_(opts) {
         Installment: note.installment === null ? '' : note.installment,
         Installments: note.installments === null ? '' : note.installments,
         Category: hit ? hit.category : '', Subcategory: hit ? hit.subcategory : '',
-        Status: hit ? 'ok' : 'pending', RuleId: hit ? hit.ruleId : '',
+        /* `auto` ולא `ok`: כלל סיווג את השורה, אבל יועד עוד לא ראה אותה.
+           ההבחנה הזו היא כל ההבדל בין אוטומציה לבין החלטה. */
+        Status: hit ? 'auto' : 'pending', RuleId: hit ? hit.ruleId : '',
         Source: 'credit', FileHash: hash.slice(0, 12), SheetRow: rec.sheetRow,
         Key: rec.key, Occ: rec.occ, CreatedAt: now, UpdatedAt: now
       }));
@@ -409,6 +415,32 @@ function ingestInbox_(opts) {
     if (impRows.length) eImp.sheet.getRange(eImp.sheet.getLastRow() + 1, 1, impRows.length, eImp.headers.length).setValues(impRows);
   }
   return report;
+}
+
+/* גרסאות להרצה **מעורך הסקריפט**: שם אין הקשר UI ו-`SpreadsheetApp.getUi()`
+   זורק. הדוח הולך ליומן הביצוע במקום לדיאלוג. אותה לוגיקה בדיוק —
+   ingestInbox_ היא המקור היחיד, ואין כאן שכפול שלה. */
+function ingestDryRunLog() {
+  var rep = withLock_(function () { return ingestInbox_({ dryRun: true }); });
+  Logger.log(formatReport_(rep));
+  return rep;
+}
+
+function ingestRunLog() {
+  var rep = withLock_(function () { return ingestInbox_({ dryRun: false }); });
+  Logger.log(formatReport_(rep));
+  return rep;
+}
+
+/* בדיקת שפיות לפני הכול: מוכיחה שההרשאה עברה ושהתיקייה נגישה,
+   בלי לגעת בשום קובץ ובלי לכתוב כלום. */
+function ingestPing() {
+  var f = DriveApp.getFolderById(ING.inboxFolderId);
+  var it = f.getFiles(), names = [];
+  while (it.hasNext() && names.length < 50) names.push(it.next().getName());
+  Logger.log('תיקייה: ' + f.getName() + ' · ' + names.length + ' קבצים');
+  names.forEach(function (n) { Logger.log('  · ' + n); });
+  return names;
 }
 
 function ingestDryRun() {
@@ -511,8 +543,10 @@ function classifyMerchant_(ss, body) {
     }));
   }
 
-  var applied = recategorize_(ss, { onlyPending: true });
-  return { ruleId: ruleId, pattern: pattern, category: category, subcategory: sub, applied: applied.changed };
+  /* ❗ **בכוונה לא מחיל על שורות קיימות.** ההכרעה של יועד: כלל הוא הוראה
+     לעתיד, לא שכתוב היסטוריה. שורות שכבר בגיליון מקבלות ממנו *המלצה*
+     במסך, והוא מאשר אותן בקבוצות. ר' phase5_expenses_screen.md.        */
+  return { ruleId: ruleId, pattern: pattern, category: category, subcategory: sub, applied: 0 };
 }
 
 /* הרצה חוזרת של כל הכללים. `onlyPending` מגן על סיווג ידני שיועד עשה בגיליון:
@@ -548,6 +582,188 @@ function recategorize_(ss, opts) {
   return { changed: changed, scanned: t.rows.length };
 }
 
+/* ====================== קטגוריות ====================== */
+
+/* מקור אמת יחיד לכל בורר קטגוריה במסך. לולא הטאב הזה הרשימה הייתה חיה
+   גם בקוד וגם בגיליון, ושתי הגרסאות היו נפרדות בשקט. */
+var CATEGORY_COLS = ['Category', 'Subcategory', 'Active', 'Order', 'Notes', 'UpdatedAt'];
+function categoriesSheet_(ss) { return ensureSheetWithCols_(ss, 'Categories', CATEGORY_COLS); }
+
+var SEED_CATEGORIES_ = [
+  ['מזון','סופרמרקט'],['מזון','מסעדה'],['מזון','בית קפה'],['מזון','מאפייה'],
+  ['מזון','משלוחים'],['מזון','ממתקים'],['מזון','מכונות אוטומטיות'],
+  ['תחבורה','חניה'],['תחבורה','דלק'],['תחבורה','רכב'],['תחבורה','תחבורה ציבורית'],
+  ['בריאות','פארם'],['בריאות','רפואה'],['בריאות','כושר'],
+  ['מנויים','מדיה'],['מנויים','תוכנה'],['מנויים','תקשורת'],
+  ['ביטוח','ביטוח'],['ביטוח','ביטוח חיים'],['ביטוח','ביטוח רכב'],
+  ['קניות','ביגוד'],['קניות','אלקטרוניקה'],['קניות','כללי'],
+  ['בית','בית וגינון'],['בית','שירותים לבית'],['בית','ועד בית'],
+  ['טיפוח','טיפוח'],['נסיעות','נסיעות'],['נסיעות','מלונות'],
+  ['חינוך','לימודים'],['חינוך','חוגים'],
+  ['העברות','העברה אישית'],['הטבות','טעינת כרטיס']
+];
+
+function seedCategories() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var e = categoriesSheet_(ss);
+  var t = readTable_(e.sheet), have = {};
+  t.rows.forEach(function (r) {
+    have[String(r.Category || '').trim() + '|' + String(r.Subcategory || '').trim()] = true;
+  });
+  var add = [], now = nowIso_(), i = t.rows.length;
+  SEED_CATEGORIES_.forEach(function (c) {
+    if (have[c[0] + '|' + c[1]]) return;
+    i++;
+    add.push(objToLine_(e.headers, { Category: c[0], Subcategory: c[1], Active: true,
+      Order: i, Notes: '', UpdatedAt: now }));
+  });
+  if (add.length) e.sheet.getRange(e.sheet.getLastRow() + 1, 1, add.length, e.headers.length).setValues(add);
+  SpreadsheetApp.getUi().alert('נוספו ' + add.length + ' קטגוריות (מתוך ' + SEED_CATEGORIES_.length + ').');
+}
+
+/* ====================== אישור סיווג ====================== */
+
+/* כותב **רק את השורות שיועד סימן**, לפי מזהה מפורש שהלקוח שלח.
+   לא דפוס, לא 'כל מי שדומה', ולא החלה רטרואקטיבית. זה בדיוק ההבדל
+   בין המנגנון הזה לבין classifyMerchant_ הישן.                        */
+function approveExpenses_(ss, body) {
+  var items = approveItems_(body);
+  if (!items.length) throw new Error('לא נשלחו שורות לאישור');
+
+  var want = {};
+  items.forEach(function (it) { want[it.id] = it; });
+
+  var e = expensesSheet_(ss);
+  var t = readTable_(e.sheet);
+  if (!t.rows.length) return { updated: 0, requested: items.length, ruleId: null };
+
+  var iCat = t.headers.indexOf('Category'), iSub = t.headers.indexOf('Subcategory');
+  var iSt = t.headers.indexOf('Status'), iUp = t.headers.indexOf('UpdatedAt');
+  var iTag = t.headers.indexOf('Tag');
+  var first = t.rows[0]._row, last = t.rows[t.rows.length - 1]._row;
+  var block = e.sheet.getRange(first, 1, last - first + 1, t.headers.length);
+  var vals = block.getValues();
+  var now = nowIso_(), n = 0;
+
+  t.rows.forEach(function (r) {
+    var it = want[String(r.Id)];
+    if (!it) return;
+    var i = r._row - first;
+    vals[i][iCat] = it.cat; vals[i][iSub] = it.sub;
+    vals[i][iSt] = 'ok'; vals[i][iUp] = now;
+    /* התג נכתב רק כשהלקוח שלח את המפתח. בלי התנאי הזה, אישור מהצורה
+       הישנה — שאינה מכירה תגים כלל — היה מוחק תגים קיימים בשקט. */
+    if (iTag >= 0 && it.hasTag) vals[i][iTag] = it.tag;
+    n++;
+  });
+  if (n) block.setValues(vals);
+
+  /* הכלל נכתב פעם אחת, לפי הקטגוריה של השורה הראשונה — כלל הוא הוראה
+     לקליטות הבאות, ואין לו משמעות ברמת שורה בודדת. */
+  var ruleId = null;
+  if (body.rule && body.rule.pattern) ruleId = upsertRule_(ss, body.rule, items[0].cat, items[0].sub);
+
+  /* מדווח גם כמה **התבקשו** וגם כמה **עודכנו**. פער בין השניים אומר
+     שהלקוח מחזיק תמונה ישנה, ועדיף שזה ייראה מאשר ייבלע בשקט. */
+  return { updated: n, requested: items.length, ruleId: ruleId };
+}
+
+/* שתי צורות נכנסות לאותו מבנה:
+   חדשה — `items:[{id,category,subcategory,tag}]`, ערך לכל שורה בנפרד.
+   ישנה — `{ids,category,subcategory}`, ערך אחד לכולן.
+   הישנה נשמרת כי לקוח עם קובץ JS ישן במטמון הדפדפן ימשיך לשלוח אותה,
+   וכתיבה שנופלת באמצע גרועה מכתיבה שמקבלת שתי צורות. */
+function approveItems_(body) {
+  var out = [];
+  if (body && body.items && body.items.length) {
+    body.items.forEach(function (it) {
+      var id = String(it && it.id != null ? it.id : '').trim();
+      var cat = String(it && it.category || '').trim();
+      if (!id) return;
+      if (!cat) throw new Error('חסרה קטגוריה לשורה ' + id);
+      out.push({ id: id, cat: cat, sub: String(it.subcategory || '').trim(),
+                 tag: String(it.tag || '').trim(),
+                 hasTag: Object.prototype.hasOwnProperty.call(it, 'tag') });
+    });
+    return out;
+  }
+  var ids = (body && body.ids) || [];
+  var c = String(body && body.category || '').trim();
+  if (ids.length && !c) throw new Error('חסרה קטגוריה');
+  var sub = String(body && body.subcategory || '').trim();
+  var hasTag = Object.prototype.hasOwnProperty.call(body || {}, 'tag');
+  var tag = String(body && body.tag || '').trim();
+  ids.forEach(function (x) {
+    var id = String(x).trim();
+    if (id) out.push({ id: id, cat: c, sub: sub, tag: tag, hasTag: hasTag });
+  });
+  return out;
+}
+
+/* הוספת קטגוריה או תת-קטגוריה מהממשק. אידמפוטנטית: זוג שכבר קיים לא
+   נכפל ולא נדרס. קטגוריה בלי תת-סעיף נשמרת כשורת מציין, וכשמגיע לה
+   תת-סעיף ראשון — השורה הזו מנוצלת במקום להשאיר שורה ריקה יתומה. */
+function upsertCategory_(ss, body) {
+  var cat = String(body && body.category || '').trim();
+  var sub = String(body && body.subcategory || '').trim();
+  if (!cat) throw new Error('חסרה קטגוריה');
+
+  var e = categoriesSheet_(ss), t = readTable_(e.sheet), now = nowIso_();
+  var placeholder = null, maxOrder = 0;
+
+  for (var i = 0; i < t.rows.length; i++) {
+    var r = t.rows[i];
+    var rc = String(r.Category || '').trim(), rs = String(r.Subcategory || '').trim();
+    var ord = Number(r.Order) || 0;
+    if (ord > maxOrder) maxOrder = ord;
+    if (rc !== cat) continue;
+    if (rs === sub) return { created: 0, category: cat, subcategory: sub, existed: true };
+    if (rs === '' && sub) placeholder = r;
+  }
+
+  if (placeholder) {
+    writeRow_(e.sheet, t.headers, placeholder._row, {
+      Category: cat, Subcategory: sub, Active: true,
+      Order: Number(placeholder.Order) || (maxOrder + 1),
+      Notes: placeholder.Notes || '', UpdatedAt: now });
+    return { created: 1, category: cat, subcategory: sub, filledPlaceholder: true };
+  }
+
+  e.sheet.appendRow(objToLine_(e.headers, {
+    Category: cat, Subcategory: sub, Active: true, Order: maxOrder + 1,
+    Notes: '', UpdatedAt: now }));
+  return { created: 1, category: cat, subcategory: sub };
+}
+
+/* כתיבת כלל בלבד — הוראה לקליטות הבאות. **אינו נוגע בשורה קיימת.** */
+function upsertRule_(ss, rule, cat, sub) {
+  var pattern = String(rule.pattern || '').trim();
+  if (!pattern) return null;
+  var field = String(rule.field || 'merchant');
+  var match = String(rule.match || 'contains');
+  var card = String(rule.card || '').trim();
+  var e = rulesSheet_(ss), t = readTable_(e.sheet), now = nowIso_();
+
+  for (var i = 0; i < t.rows.length; i++) {
+    var r = t.rows[i];
+    if (String(r.Pattern || '').trim() === pattern &&
+        String(r.Field || 'merchant') === field &&
+        String(r.Card || '').trim() === card) {
+      writeRow_(e.sheet, t.headers, r._row, {
+        Id: r.Id, Active: true, Priority: 50, Field: field, Match: match, Pattern: pattern,
+        Card: card, Category: cat, Subcategory: sub, Source: 'user',
+        Hits: r.Hits || 0, CreatedAt: r.CreatedAt || now, UpdatedAt: now });
+      return String(r.Id);
+    }
+  }
+  var id = 'R' + ('000' + (t.rows.length + 1)).slice(-4);
+  e.sheet.appendRow(objToLine_(e.headers, {
+    Id: id, Active: true, Priority: 50, Field: field, Match: match, Pattern: pattern,
+    Card: card, Category: cat, Subcategory: sub, Source: 'user', Hits: 0,
+    CreatedAt: now, UpdatedAt: now }));
+  return id;
+}
+
 /* ====================== נקודות קצה ====================== */
 
 function ingestApiRead_(ss, r, params) {
@@ -564,11 +780,17 @@ function ingestApiRead_(ss, r, params) {
     var sr = ss.getSheetByName(ING.rulesSheet);
     return { values: sr ? sr.getDataRange().getValues() : [RULE_COLS] };
   }
+  if (r === 'categories') {
+    var sc = ss.getSheetByName('Categories');
+    return { values: sc ? sc.getDataRange().getValues() : [CATEGORY_COLS] };
+  }
   if (r === 'pending') return { merchants: pendingMerchants_(ss) };
   return null;
 }
 
 function ingestApiWrite_(ss, action, body) {
+  if (action === 'expenses.approve')      return approveExpenses_(ss, body);
+  if (action === 'categories.upsert')     return upsertCategory_(ss, body);
   if (action === 'expenses.classify')     return classifyMerchant_(ss, body);
   if (action === 'expenses.recategorize') return recategorize_(ss, { onlyPending: !body.all });
   if (action === 'ingest.run')            return ingestInbox_({ dryRun: !!body.dryRun });
@@ -576,6 +798,7 @@ function ingestApiWrite_(ss, action, body) {
 }
 
 if (typeof module !== 'undefined') module.exports = {
+  approveItems_: approveItems_, EXPENSE_COLS: EXPENSE_COLS,
   normMerchant_: normMerchant_, suggestCategory_: suggestCategory_,
   ruleHits_: ruleHits_, applyRules_: applyRules_, detectKind_: detectKind_,
   isoDay_: isoDay_, SEED_RULES_: SEED_RULES_, SUGGEST_: SUGGEST_,

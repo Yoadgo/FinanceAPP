@@ -151,3 +151,84 @@
   .ex-foot select { flex:1; }
   .ex-kpi .v { font-size:20px; }
 }
+
+/* ===== פירוט שורות · תג · יצירת קטגוריה ===== */
+
+.ex-detail {
+  display:block; width:100%; margin:12px 0 0; padding:9px;
+  background:transparent; border:1px dashed var(--border); border-radius:var(--r-sm);
+  color:var(--text-secondary); font:inherit; font-size:13px; cursor:pointer;
+  transition:background var(--t-glide), color var(--t-glide);
+}
+.ex-detail:hover { background:var(--bg-subtle); color:var(--text-primary); }
+
+.ex-rows { margin-top:10px; border-top:1px solid var(--border); }
+
+/* grid ולא flex: העמודות חייבות להתיישר בין שורות, אחרת העין לא
+   מצליחה לסרוק סכומים בטור. */
+.ex-r {
+  display:grid; align-items:center; gap:10px;
+  grid-template-columns:auto 40px minmax(90px,1fr) auto auto 118px 118px 100px;
+  padding:8px 4px; border-bottom:1px solid var(--border);
+  transition:opacity var(--t-glide);
+}
+.ex-r.off { opacity:.42; }
+.ex-r-pick { display:flex; align-items:center; margin:0; cursor:pointer; }
+.ex-r-d    { color:var(--text-muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.ex-r-n    { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.ex-r-note { color:var(--text-muted); font-size:11px; white-space:nowrap; }
+.ex-r-a    { font-variant-numeric:tabular-nums; font-size:13px; white-space:nowrap; }
+.ex-r select, .ex-r input {
+  width:100%; min-width:0; padding:5px 6px; font:inherit; font-size:12px;
+  border:1px solid var(--border); border-radius:var(--r-xs);
+  background:var(--bg-surface); color:var(--text-primary);
+}
+.ex-r input[type=checkbox] { width:auto; padding:0; }
+
+.ex-tagin {
+  flex:1 1 150px; min-width:0; padding:8px 10px; font:inherit; font-size:13px;
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  background:var(--bg-surface); color:var(--text-primary);
+}
+
+/* `display:flex` גובר על `[hidden]{display:none}` של הדפדפן, ולכן הפאנל
+   היה גלוי תמיד. הכלל הזה מחזיר ל-hidden את המשמעות שלו. */
+.ex-new[hidden] { display:none; }
+.ex-new {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-top:10px; padding:10px 12px;
+  background:var(--bg-subtle); border-radius:var(--r-sm);
+}
+.ex-new-lbl { font-size:13px; color:var(--text-secondary); }
+.ex-new-in  {
+  flex:1 1 130px; min-width:0; padding:7px 9px; font:inherit; font-size:13px;
+  border:1px solid var(--border); border-radius:var(--r-xs);
+  background:var(--bg-surface); color:var(--text-primary);
+}
+.ex-new-ok, .ex-new-x {
+  padding:7px 14px; font:inherit; font-size:13px; cursor:pointer;
+  border:1px solid var(--border); border-radius:var(--r-xs); background:var(--bg-surface);
+  color:var(--text-primary); transition:filter var(--t-press);
+}
+.ex-new-ok { background:var(--dom-spend); border-color:var(--dom-spend); color:#fff; }
+.ex-new-ok:hover { filter:brightness(1.08); }
+.ex-new-msg { font-size:12px; color:var(--text-muted); }
+
+/* מתחת ל-720px השורה נשברת לארבע קומות: זיהוי, הערה, סיווג, תג.
+   שמונה עמודות במסך צר גולשות אופקית, וגלישה אופקית פוסלת את המסך. */
+@media (max-width: 720px) {
+  .ex-r {
+    grid-template-columns:auto 40px 1fr auto;
+    grid-template-areas:
+      "pick date name amt"
+      "note note note note"
+      "cat  cat  sub  sub"
+      "tag  tag  tag  tag";
+    row-gap:6px;
+  }
+  .ex-r-pick { grid-area:pick; } .ex-r-d { grid-area:date; }
+  .ex-r-n { grid-area:name; }    .ex-r-a { grid-area:amt; text-align:end; }
+  .ex-r-note { grid-area:note; } .ex-r-cat { grid-area:cat; }
+  .ex-r-sub { grid-area:sub; }   .ex-r-tag { grid-area:tag; }
+  .ex-r-note:empty { display:none; }
+}

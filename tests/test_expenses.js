@@ -114,5 +114,25 @@ console.log('  צריכה ₪'+sAll.consume.toLocaleString()+' · בהמתנה �
 console.log('  '+g.groups.length+' קבוצות + '+g.singles.length+' בודדים = '+(g.groups.length+g.singles.length)+' החלטות');
 console.log('  '+inst.length+' תשלומים פתוחים · נותר לשלם ₪'+inst.reduce((a,x)=>a+x.remaining,0).toFixed(0));
 console.log('');
+/* ---------- תגים (ציר שני, חוצה קטגוריות) ---------- */
+{
+  const tagged = rows.map((r, i) => Object.assign({}, r,
+    i < 3 ? { tag: 'יוון 08.26', cat: r.cat || 'קניות' } :
+    i < 5 ? { tag: 'רומא 12.25', cat: r.cat || 'מזון' } : {}));
+  const st = E.summarize(tagged, {});
+  const tags = st.byTag.map(x => x.tag).sort();
+  ok('שני תגים נספרו', tags.length === 2 && tags[0] && tags[1], JSON.stringify(tags));
+  const yavan = st.byTag.find(x => x.tag === 'יוון 08.26');
+  const manual = tagged.slice(0, 3).reduce((a, r) => a + r.charge, 0);
+  ok('סכום התג = סכום השורות שלו', Math.abs(yavan.sum - manual) < 0.02, yavan.sum + ' מול ' + manual);
+
+  const only = E.summarize(tagged, { tag: 'יוון 08.26' });
+  ok('סינון לפי תג משאיר 3 שורות', only.rows === 3, only.rows);
+  ok('סינון לפי תג = סכום התג', Math.abs(only.total - manual) < 0.02, only.total);
+  ok('תג חוצה קטגוריות — לא נבלע בדלי אחד', E.summarize(tagged, {}).byTag.length === 2);
+  ok('בלי תגים המערך ריק', E.summarize(rows, {}).byTag.length === 0);
+  ok('שורה בלי תג לא נספרת', st.byTag.reduce((a, x) => a + x.sum, 0) < st.total);
+}
+
 console.log(fail===0 ? '✅ כל '+pass+' הבדיקות עברו' : '❌ '+fail+' נכשלו מתוך '+(pass+fail));
 process.exit(fail?1:0);
