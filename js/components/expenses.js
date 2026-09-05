@@ -298,12 +298,14 @@ Pages.expenses = (() => {
 
     _busy[c.dataset.k] = true; _btn(c, item);
     try {
-      await DataService.post({
-        action: 'expenses.approve', ids, category: cat, subcategory: sub,
+      /* חתימת post היא (action, payload, opts) — שלושה ארגומנטים.
+         אובייקט אחד עם action בתוכו נשלח לשרת כ-action שהוא אובייקט,
+         והשרת עונה "פעולה לא מוכרת". זו הייתה שגיאת השמירה.        */
+      await DataService.post('expenses.approve', {
+        ids, category: cat, subcategory: sub,
         rule: mkRule ? { pattern: item.members ? item.token : item.norm,
                          match: item.members ? 'contains' : 'equals', field: 'merchant' } : null,
-        writeId: 'ap-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-      });
+      }, { writeId: 'ap-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) });
       _rows.forEach(r => { if (names[r.norm] && !r.cat) { r.cat = cat; r.sub = sub; r.status = 'ok'; } });
       _recompute();
       c.classList.add('gone');

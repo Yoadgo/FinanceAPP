@@ -206,6 +206,14 @@ function onOpen() {
     .addSeparator()
     .addItem("Open Log Sheet", "openLogSheet")
     .addToUi();
+
+  SpreadsheetApp.getUi().createMenu('קליטה')
+    .addItem('הרצה יבשה — בלי לכתוב כלום', 'ingestDryRun')
+    .addItem('קליטה מהתיקייה', 'ingestRun')
+    .addSeparator()
+    .addItem('זריעת כללי סיווג', 'seedRules')
+    .addItem('זריעת קטגוריות', 'seedCategories')
+    .addToUi();
 }
 
 function openLogSheet() {
@@ -935,7 +943,10 @@ function writeApi_(action, body) {
       else if (action === 'accounts.archive') out = archiveAccount_(ss, body);
       else if (action === 'instruments.upsert') out = upsertInstrument_(ss, body);
       else if (action === 'instruments.archive') out = archiveInstrument_(ss, body);
-      else throw new Error('Unknown action: ' + action);
+      else {
+        out = (typeof ingestApiWrite_ === 'function') ? ingestApiWrite_(ss, action, body) : null;
+        if (!out) throw new Error('Unknown action: ' + action);
+      }
 
       try { logEvent_(ss, 'write', 'WRITE', { action: action, writeId: body.writeId, result: out }, 'OK'); } catch (e) {}
       return out;
@@ -1443,6 +1454,14 @@ function api_(resource, params) {
     };
   }
 
+  /* מנוע הקליטה (Ingest.gs) מוסיף נקודות קצה משלו. השער כבר נאכף
+     למעלה; משאב שלו אינו ב-AUTH_PUBLIC ולכן דורש מושב. הבדיקה typeof
+     מאפשרת ל-Code.gs לעבוד גם בלעדיו — וזה מכוון. */
+  if (typeof ingestApiRead_ === 'function') {
+    var _ing = ingestApiRead_(ss, r, params);
+    if (_ing) return _ing;
+  }
+
   if (r === "realtime") {
     const sh = ss.getSheetByName(CFG.realtimeSheet);
     if (!sh) throw new Error("Missing sheet: " + CFG.realtimeSheet);
@@ -1455,6 +1474,10 @@ function api_(resource, params) {
     if (!sh) throw new Error("Missing sheet: " + CFG.transactionsSheet);
     const values = sh.getDataRange().getValues();
     return { values };
+  }
+
+  if (r === "fx_history" || r === "fxhistory") {
+    return getFxHistory_(ss);
   }
 
   if (r === "usd_ils" || r === "usdils") {
@@ -1524,4 +1547,260 @@ function api_(resource, params) {
   if (r === "history_cache") throw new Error("history_cache is handled in doGet");
 
   throw new Error("Unknown resource: " + resource);
+}
+
+
+/* ================================================================
+   ייבוא חד-פעמי — תיק אלטשולר שחם טרייד, חשבון 59560
+   ----------------------------------------------------------------
+   מקור: שלושה דוחות תקופתיים (PDF) 09/2025, 12/2025, 03/2026.
+   37 שורות מקור → 37 שורות כאן, יחס 1:1. אף שורה לא נזרקה.
+
+   אומת לפני הכתיבה מול הדוחות עצמם:
+     • החזקות ועלות רכישה — 16/16 התאמות מדויקות בשלושה צילומי
+       יתרות בלתי-תלויים (30/09/25, 31/12/25, 31/03/26).
+     • סגירת מזומן — ₪1,110.11 מול 1,110.10 בדוח, $428.93 מול 428.91.
+       הפרש עיגול לשתי ספרות, לא שורה חסרה.
+
+   מוסכמות שנבחרו (ר' tax_presentation_model.md):
+     • דיבידנד נכתב **נטו** — כך אלטשולר מציגה, וכך גם נכנס לחשבון.
+     • המס בשקלים יושב ב-EstimatedTax כי הוא **אינו תנועת מזומן**
+       (נוכה במקור). שום מספר לא נגזר; הברוטו לא נכתב.
+     • המרת מט"ח → "קניה שח" עם סימבול 99028, כמו באיביאי.
+     • "מתנה" → "שונות מזומן בשח" (אושר ע"י יועד).
+
+   אידמפוטנטית: מסרבת לרוץ אם כבר קיימת ולו שורה אחת של אלטשולר.
+   ================================================================ */
+var ALT_PORTFOLIO = 'אלטשולר';
+
+function importAltshuler() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('לא הצלחתי לתפוס מנעול');
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(CFG.transactionsSheet);
+    if (!sh) throw new Error('אין טאב Transactions');
+
+    var headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var pIdx = headers.indexOf('Portfolio');
+    if (pIdx === -1) throw new Error('אין עמודת Portfolio');
+
+    var last = sh.getLastRow();
+    if (last > 1) {
+      var existing = sh.getRange(2, pIdx + 1, last - 1, 1).getValues();
+      for (var i = 0; i < existing.length; i++) {
+        if (String(existing[i][0]).trim() === ALT_PORTFOLIO) {
+          var msg = 'אלטשולר כבר קיים בגיליון (שורה ' + (i + 2) + '). לא נכתב כלום.';
+          Logger.log(msg);
+          return msg;
+        }
+      }
+    }
+
+    var data = ALT_ROWS_();
+    if (data.length !== 37) throw new Error('צפויות 37 שורות, יש ' + data.length);
+
+    sh.getRange(last + 1, 1, data.length, 14).setValues(data);
+    SpreadsheetApp.flush();
+
+    var out = 'נכתבו ' + data.length + ' שורות אלטשולר, שורות ' +
+              (last + 1) + '-' + (last + data.length);
+    Logger.log(out);
+    try { logEvent_(newRunId_(), 'importAltshuler', 'WRITE', 'OK', out); } catch (e) {}
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ALT_ROWS_() {
+  return [
+  [new Date(2025,7,21),"העברה מזומן בשח","העברה","",5000,0,"₪ ",0,0,0,5000,5000,0,"אלטשולר"],
+  [new Date(2025,7,22),"קניה חול מטח","iShares Bitcoin Trust","IBIT",10,63.54,"$ ",5,0,-640.4,0,5000,0,"אלטשולר"],
+  [new Date(2025,7,22),"קניה שח","המרת מט\"ח","99028",640.4,3.398,"₪ ",0,0,0,-2176.48,2823.52,0,"אלטשולר"],
+  [new Date(2025,7,25),"קניה חול מטח","iShares Ethereum Trust","ETHA",15,34.88,"$ ",5.05,0,-528.25,0,2823.52,0,"אלטשולר"],
+  [new Date(2025,7,25),"קניה שח","המרת מט\"ח","99028",528.25,3.406,"₪ ",0,0,0,-1799.42,1024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"העברה מזומן בשח","העברה","",50000,0,"₪ ",0,0,0,50000,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","iShares Bitcoin Trust","IBIT",45,64.23,"$ ",5.35,0,-2895.7,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","iShares Ethereum Trust","ETHA",40,34.84,"$ ",5.3,0,-1398.9,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","Invesco QQQ Trust","QQQ",10,573.56,"$ ",5,0,-5740.6,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","NVIDIA Corporation","NVDA",5,178.12,"$ ",4.95,0,-895.55,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","Palantir Technologies","PLTR",10,156.31,"$ ",5,0,-1568.1,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה חול מטח","iShares Core S&P 500 ETF","IVV",4,650.55,"$ ",4.94,0,-2607.14,0,51024.1,0,"אלטשולר"],
+  [new Date(2025,7,28),"קניה שח","המרת מט\"ח","99028",15105.99,3.352,"₪ ",0,0,0,-50636.81,387.29,0,"אלטשולר"],
+  [new Date(2025,8,8),"שונות מזומן בשח","מתנה","900",800,0,"₪ ",0,0,0,800,1187.29,0,"אלטשולר"],
+  [new Date(2025,8,19),"הפקדה דיבידנד מטח","דיב/ IVV US","99028",4,0,"$ ",0,0,5.98,0,1187.29,-6.66,"אלטשולר"],
+  [new Date(2025,9,2),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,0.04,0,1187.29,-0.04,"אלטשולר"],
+  [new Date(2025,9,31),"הפקדה דיבידנד מטח","דיב/ QQQ US","99028",10,0,"$ ",0,0,5.21,0,1187.29,-5.63,"אלטשולר"],
+  [new Date(2025,11,19),"הפקדה דיבידנד מטח","דיב/ IVV US","99028",4,0,"$ ",0,0,7.24,0,1187.29,-7.74,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,-42.42,0,1187.29,-135.32,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,42.42,0,1187.29,135.32,"אלטשולר"],
+  [new Date(2025,11,26),"קניה שח","המרת מט\"ח","99028",23.95,3.223,"₪ ",0,0,0,-77.18,1110.11,0,"אלטשולר"],
+  [new Date(2025,11,28),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,0.04,0,1110.11,-0.04,"אלטשולר"],
+  [new Date(2025,11,28),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,-0.04,0,1110.11,0.04,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,0.04,0,1110.11,-0.04,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,-0.04,0,1110.11,0.04,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,0.04,0,1110.11,-0.04,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,-0.04,0,1110.11,0.04,"אלטשולר"],
+  [new Date(2025,11,26),"הפקדה דיבידנד מטח","דיב/ NVDA US","99028",5,0,"$ ",0,0,0.04,0,1110.11,-0.04,"אלטשולר"],
+  [new Date(2025,11,31),"הפקדה דיבידנד מטח","דיב/ QQQ US","99028",10,0,"$ ",0,0,5.95,0,1110.11,-6.34,"אלטשולר"],
+  [new Date(2026,1,12),"מכירה חול מטח","Palantir Technologies","PLTR",10,129.72,"$ ",4.9,0,1292.3,0,1110.11,0,"אלטשולר"],
+  [new Date(2026,1,12),"מכירה חול מטח","NVIDIA Corporation","NVDA",5,188.2,"$ ",4.9,0,936.1,0,1110.11,0,"אלטשולר"],
+  [new Date(2026,1,12),"קניה חול מטח","iShares Ethereum Trust","ETHA",50,14.545,"$ ",4.9,0,-732.15,0,1110.11,0,"אלטשולר"],
+  [new Date(2026,1,12),"קניה חול מטח","iShares Bitcoin Trust","IBIT",30,37.3891,"$ ",4.9,0,-1126.57,0,1110.11,0,"אלטשולר"],
+  [new Date(2026,2,20),"הפקדה דיבידנד מטח","דיב/ IVV US","99028",4,0,"$ ",0,0,5.35,0,1110.11,-5.54,"אלטשולר"],
+  [new Date(2026,2,20),"הפקדה דיבידנד מטח","דיב/ IVV US","99028",4,0,"$ ",0,0,-5.35,0,1110.11,5.54,"אלטשולר"],
+  [new Date(2026,2,20),"הפקדה דיבידנד מטח","דיב/ IVV US","99028",4,0,"$ ",0,0,5.34,0,1110.11,-5.54,"אלטשולר"],
+  [new Date(2026,2,27),"הפקדה דיבידנד מטח","דיב/ QQQ US","99028",10,0,"$ ",0,0,5.5,0,1110.11,-5.77,"אלטשולר"]
+  ];
+}
+
+
+/* ================================================================
+   מחיקה מוגנת — 9 השורות הכפולות בתיק איביאי-דר (שורות 33–41)
+   ----------------------------------------------------------------
+   הרקע (אומת 3.9.2026): שורות 2–41 הן בלוק רצוף של 40 שורות דר
+   שהודבק בראש הגיליון, בעוד שבכל שאר הגיליון שורות דר משולבות
+   בין שורות יועד ברצפים של 1–2 (151 רצפים). הגוף מכיל נתוני דר
+   עד 18/05/2026 בדיוק. מתוך 40 שורות הבלוק, 9 בדיוק מתוארכות
+   18/05/2026 או לפניה — והן בדיוק ה-9 שיש להן תאום בגוף.
+   31 השורות האחרות (19/05–17/08) חדשות ואסור לגעת בהן.
+
+   הפונקציה לא סומכת על מספרי שורות. לפני כל מחיקה היא מאמתת:
+     1. התיק הוא איביאי-דר
+     2. התאריך ‎<= 18/05/2026
+     3. קיים תאום זהה **מחוץ** לטווח 33–41 שיישאר בגיליון
+   אם ולו בדיקה אחת נכשלת — לא נמחק כלום.
+
+   לפני המחיקה השורות מועתקות לטאב 'DeletedRows' כדי שיישאר תיעוד.
+   (ובנוסף, היסטוריית הגרסאות של Google Sheets מאפשרת שחזור מלא.)
+   ================================================================ */
+var DEL = { from: 33, to: 41, portfolio: 'איביאי-דר', cutoffY: 2026, cutoffM: 5, cutoffD: 18 };
+
+function deleteDarDuplicates() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) throw new Error('לא הצלחתי לתפוס מנעול');
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(CFG.transactionsSheet);
+    var lastRow = sh.getLastRow(), nCols = 14;
+    var all = sh.getRange(1, 1, lastRow, nCols).getValues();
+    var hdr = all[0];
+    var iDate = hdr.indexOf('Date'), iPort = hdr.indexOf('Portfolio');
+
+    function fp(row) {
+      var d = row[iDate];
+      var ds = (d instanceof Date)
+        ? [d.getFullYear(), d.getMonth() + 1, d.getDate()].join('-')
+        : String(d);
+      // כל העמודות פרט ל-CashBalanceILS ו-EstimatedTax
+      return [ds, row[1], row[2], row[3], row[4], row[5], row[6],
+              row[7], row[8], row[9], row[10], row[13]].join('|');
+    }
+
+    // מפה של כל טביעות האצבע מחוץ לטווח המחיקה
+    var outside = {};
+    for (var i = 1; i < all.length; i++) {
+      var sheetRow = i + 1;
+      if (sheetRow >= DEL.from && sheetRow <= DEL.to) continue;
+      var k = fp(all[i]);
+      outside[k] = (outside[k] || 0) + 1;
+    }
+
+    var plan = [], problems = [];
+    for (var r = DEL.from; r <= DEL.to; r++) {
+      var row = all[r - 1];
+      var port = String(row[iPort]).trim();
+      var d = row[iDate];
+      if (port !== DEL.portfolio) { problems.push('שורה ' + r + ': תיק ' + port); continue; }
+      if (!(d instanceof Date)) { problems.push('שורה ' + r + ': תאריך אינו תאריך'); continue; }
+      var afterCutoff = (d.getFullYear() > DEL.cutoffY) ||
+        (d.getFullYear() === DEL.cutoffY && (d.getMonth() + 1 > DEL.cutoffM ||
+         (d.getMonth() + 1 === DEL.cutoffM && d.getDate() > DEL.cutoffD)));
+      if (afterCutoff) { problems.push('שורה ' + r + ': תאריך אחרי 18/05/2026'); continue; }
+      var k = fp(row);
+      if (!outside[k]) { problems.push('שורה ' + r + ': אין תאום מחוץ לטווח'); continue; }
+      plan.push({ row: r, key: k, values: row });
+    }
+
+    if (problems.length) throw new Error('בוטל, לא נמחק כלום. בעיות: ' + problems.join(' ; '));
+    if (plan.length !== 9) throw new Error('בוטל: צפויות 9 שורות, נמצאו ' + plan.length);
+
+    // תיעוד לפני מחיקה
+    var log = ss.getSheetByName('DeletedRows') || ss.insertSheet('DeletedRows');
+    if (log.getLastRow() === 0) log.appendRow(['DeletedAt', 'SheetRow', 'Reason'].concat(hdr));
+    var stamp = new Date();
+    plan.forEach(function (p) {
+      log.appendRow([stamp, p.row, 'כפילות מהדבקת טווח חופף (בלוק 2–41)'].concat(p.values));
+    });
+
+    // מוחקים מלמטה למעלה כדי שהאינדקסים לא יזוזו
+    for (var j = plan.length - 1; j >= 0; j--) sh.deleteRow(plan[j].row);
+    SpreadsheetApp.flush();
+
+    var out = 'נמחקו ' + plan.length + ' שורות (' + DEL.from + '–' + DEL.to +
+              '), גובו ל-DeletedRows. שורות בגיליון: ' + sh.getLastRow();
+    Logger.log(out);
+    try { logEvent_(newRunId_(), 'deleteDarDuplicates', 'DELETE', 'OK', out); } catch (e) {}
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+/* ================================================================
+   fx_history — היסטוריית שער דולר/שקל
+   ----------------------------------------------------------------
+   למה זה נדרש: `getFxUsdIls_` מחזירה **תא בודד** — השער של היום.
+   לכן גרף ההתפתחות המיר הפקדות שקליות היסטוריות לפי שער היום,
+   בזמן שהשער נע בין 2.8005 ל-4.07615 בתקופה שהנתונים מכסים —
+   תנודה של 46%. זה לא עיגול, זה עיוות בקו שכל תשואה נמדדת מולו.
+
+   הנתונים כבר בגיליון: `USD_ILS` מכיל 1,604 שורות יומיות
+   מ-01/01/2022. (`CFG.fxHistorySheet` מצביע על 'USD_ILS_History'
+   שאינו קיים — לכן קוראים משם אם הוא קיים, ואחרת מ-`fxSheetName`.)
+
+   הפלט דחוס: `d` ימים מאז 1970 ו-`r` שערים, שני מערכים מקבילים
+   ממוינים עולה — ~22KB במקום ~60KB של אובייקטים.
+   ================================================================ */
+function getFxHistory_(ss) {
+  var sh = (CFG.fxHistorySheet && ss.getSheetByName(CFG.fxHistorySheet)) ||
+           ss.getSheetByName(CFG.fxSheetName);
+  if (!sh) throw new Error('Missing FX sheet');
+
+  var last = sh.getLastRow();
+  if (last < 1) throw new Error('FX sheet is empty');
+  var vals = sh.getRange(1, 1, last, 2).getValues();
+
+  // מפתח לפי יום — רשומה מאוחרת דורסת מוקדמת, כך ששורת "היום"
+  // בראש הגיליון לא יוצרת כפילות מול אותו תאריך בהיסטוריה.
+  var byDay = {};
+  for (var i = 0; i < vals.length; i++) {
+    var d = vals[i][0], v = Number(vals[i][1]);
+    if (!(d instanceof Date)) continue;
+    if (!isFinite(v) || v <= 0) continue;
+    var day = Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000);
+    if (!isFinite(day)) continue;
+    byDay[day] = v;
+  }
+
+  var days = [];
+  for (var k in byDay) days.push(Number(k));
+  days.sort(function (a, b) { return a - b; });
+  if (!days.length) throw new Error('No usable FX rows');
+
+  var rates = new Array(days.length);
+  for (var j = 0; j < days.length; j++) rates[j] = byDay[days[j]];
+
+  return {
+    status: 'ok',
+    resource: 'fx_history',
+    n: days.length,
+    from: days[0],
+    to: days[days.length - 1],
+    d: days,
+    r: rates,
+    updatedAt: new Date().toISOString()
+  };
 }

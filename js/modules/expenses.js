@@ -274,13 +274,17 @@ const ExpensesEngine = (function () {
 
   function dateMs(d) { return (d instanceof Date) ? d.getTime() : Date.parse(d) || 0; }
   function monthKey(d) {
-    /* המסלול הטקסטואלי קודם: 'YYYY-MM-DD' נקרא כ-UTC ובאזור שלילי
-       הוא היה מתגלגל חודש אחורה. השוואה על המחרוזת עוקפת את האזור לגמרי. */
+    /* שלושה מקורות לאותו שדה, ולכל אחד כלל אחר:
+       תאריך בלי שעה נקרא כ-UTC ולכן נחתך כטקסט; ISO עם שעה הוא Date
+       שהגיליון סידר, ודווקא אותו צריך לקרוא באזור המקומי.            */
     if (typeof d === 'string') {
-      var iso = d.match(/^(\d{4})-(\d{2})/);            // 2026-07-02  (Date מהגיליון)
-      if (iso) return iso[2] + '/' + iso[1];
-      var il = d.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);  // 02/07/2026  (BillingMonth)
+      var ymd = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);              // 2026-07-02 — תאריך בלי שעה
+      if (ymd) return ymd[2] + '/' + ymd[1];
+      var il = d.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/);   // 02/07/2026 — פלט הפרסר
       if (il) return ('0' + il[2]).slice(-2) + '/' + il[3];
+      /* ISO עם שעה ('2026-09-01T21:00:00.000Z') הוא Date שהגיליון סידר,
+         והוא כבר מוסט ל-UTC. כאן דווקא **חייבים** את האזור המקומי —
+         21:00 ב-1 בספטמבר UTC הוא ה-2 בספטמבר בישראל.               */
     }
     var x = (d instanceof Date) ? d : new Date(d);
     if (isNaN(x.getTime())) return '—';
