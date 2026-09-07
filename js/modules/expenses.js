@@ -263,6 +263,30 @@ const ExpensesEngine = (function () {
     };
   }
 
+  /* ── אותו סינון, שורות במקום סכום ──
+     `summarize` מחזיר "₪1,200 מזון". כשלוחצים על השורה הזו כדי לתקן
+     טעות, הרשימה שנפתחת **חייבת** להסתכם באותו מספר — רשימה שמסננת
+     קצת אחרת היא בדיוק סוג הפער שגורם לאבד אמון בכל המסך. לכן הסינון
+     חי כאן פעם אחת, ובדיקה נועלת את השוויון בין השניים.              */
+  function rowsIn(rows, opts) {
+    opts = opts || {};
+    var basis = opts.basis === 'date' ? 'date' : 'billing';
+    var wash = {};
+    (opts.washPairs || []).forEach(function (p) { wash[p.credit.id] = 1; wash[p.debit.id] = 1; });
+    return rows.filter(function (r) {
+      if (wash[r.id]) return false;
+      var key = monthKey(basis === 'billing' ? r.billing : r.date);
+      if (opts.month && opts.month !== 'all' && key !== opts.month) return false;
+      if (opts.tag && opts.tag !== 'all' && r.tag !== opts.tag) return false;
+      if (!opts.cat) return true;
+      /* דלי שאינו צריכה אינו נספר ב-byCat כלל, ולכן גם לא נפתח לעריכה
+         דרך שורת קטגוריה — חוץ מהמקרה שבו מבקשים אותו במפורש בשמו. */
+      var b = NON_CONSUME[r.cat] || BUCKET.consume;
+      if (b !== BUCKET.consume) return opts.cat === r.cat;
+      return (r.cat || 'בהמתנה') === opts.cat;
+    });
+  }
+
   /* ── תשלומים פתוחים ──
      "כמה עוד נשאר לשלם" היא שאלה אחרת מ"כמה הוצאתי החודש", ולכן פאנל
      נפרד. `Amount` הוא הסכום המלא, `Charge` הוא מה שחויב הפעם.        */
@@ -302,7 +326,8 @@ const ExpensesEngine = (function () {
   return { BUCKET: BUCKET, NON_CONSUME: NON_CONSUME, STOP: STOP,
            parseRows: parseRows, tokens: tokens, byMerchant: byMerchant, group: group,
            buildAnchors: buildAnchors, suggest: suggest, washPairs: washPairs,
-           reconcile: reconcile, summarize: summarize, openInstallments: openInstallments };
+           reconcile: reconcile, summarize: summarize, openInstallments: openInstallments,
+           rowsIn: rowsIn, monthKey: monthKey };
 })();
 
 if (typeof module !== 'undefined') module.exports = ExpensesEngine;

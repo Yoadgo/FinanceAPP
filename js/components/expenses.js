@@ -14,7 +14,7 @@ Pages.expenses = (() => {
   let _rows = null, _container = null, _cats = null, _stop = null;
   let _tab = 'sort', _month = 'all', _basis = 'billing';
   let _groups = null, _singles = null, _wash = null, _anchors = null;
-  let _busy = {};
+  let _busy = {}, _mgr = false, _mgrMsg = '';
 
   /* ⛔ `_busy` **לא** ממופתח לפי `data-k`. המפתח הזה הוא מיקום ברשימה
      (`g0`, `s3`), והרשימה נבנית מחדש אחרי כל אישור — כך שסימון ״שומר״
@@ -124,7 +124,7 @@ Pages.expenses = (() => {
   }
 
   /* ---------------- ציור ---------------- */
-  function _paint() {
+  function _paint(keep) {
     if (!_container) return;
     const s = ExpensesEngine.summarize(_rows, { basis: _basis, washPairs: _wash });
     const decisions = _groups.length + _singles.length;
@@ -142,6 +142,7 @@ Pages.expenses = (() => {
         ${_tab === 'sort' ? _paintSort(s) : _paintSpend(s)}
       </div>${_tagList()}`;
     _wire();
+    _restore(keep);
   }
 
   function _paintSort(s) {
@@ -154,9 +155,9 @@ Pages.expenses = (() => {
     }
     return `${_progress(okRows, autoRows, tot, s)}
       ${_groups.length ? `<div class="ex-sect">${_groups.length} קבוצות מזוהות</div>` : ''}
-      ${_groups.map((g, i) => _card(g, 'g' + i)).join('')}
+      ${_groups.map(g => _card(g, _busyKey(g))).join('')}
       ${_singles.length ? `<div class="ex-sect">${_singles.length} סוחרים בודדים</div>` : ''}
-      ${_singles.map((m, i) => _card(m, 's' + i)).join('')}`;
+      ${_singles.map(m => _card(m, _busyKey(m))).join('')}`;
   }
 
   function _progress(ok, auto, tot, s) {
@@ -189,7 +190,7 @@ Pages.expenses = (() => {
       ? `<div class="ex-why">סוחר בודד — לא נמצא סוחר אחר שנראה כמוהו.${sug.cat ? ` ההצעה <b>${esc(sug.cat)}</b> ${sug.via && sug.via.indexOf('neighbor')===0 ? 'מבוססת על סוחר דומה שכבר סיווגת' : 'מבוססת על מילה בשם'}.` : ' אין הצעה אוטומטית.'}</div>`
       : `<div class="ex-why${item.confident?'':' warn'}">מקובץ לפי המילה <b>${esc(item.token)}</b> — היא פותחת את שם הסוחר ב־<b>${item.lead}%</b> מהמקרים.
          ${item.confident ? 'לכן כל החברים מסומנים מראש.' : 'אחוז נמוך מרמז על שם מקום ולא על עסק — <b>לכן שום דבר לא סומן</b>.'}</div>`;
-    return `<div class="ex-card" data-k="${key}">
+    return `<div class="ex-card" data-k="${esc(key)}">
       <div class="ex-c-head"><span class="ex-chev">◀</span>
         <div class="ex-c-title">
           <div class="ex-c-name">${esc(solo ? item.norm : item.token)} ${pill}</div>
@@ -246,24 +247,31 @@ Pages.expenses = (() => {
         <span class="ex-r-n" title="${esc(r.merchant)}">${esc(r.norm)}</span>
         <span class="ex-r-note">${esc(r.installments > 1 ? `תשלום ${r.installment}/${r.installments}` : (r.noteKind === 'refund' ? 'זיכוי' : ''))}</span>
         <span class="ex-r-a">${money(r.charge)}</span>
-        <select class="ex-r-cat">${_catOpts('', true)}</select>
+        <select class="ex-r-cat">${_catOpts('', 'row')}</select>
         <select class="ex-r-sub"><option value="">—</option></select>
         <input class="ex-r-tag" list="ex-taglist" placeholder="תג">
       </div>`).join('');
   }
 
-  function _catOpts(sel, rowLevel) {
+  /* שלושה מצבים ולא שניים. `edit` הוא עריכה אחורה של שורה שכבר סווגה:
+     שם אין "כמו הקבוצה" (אין קבוצה), ואין "+ חדשה" (הטופס שיוצר קטגוריה
+     חי בתוך כרטיס סיווג ואינו קיים שם). שורה שעדיין בהמתנה כן מקבלת
+     ערך ריק, אחרת הבורר היה מציג קטגוריה שרירותית כאילו נבחרה.       */
+  function _catOpts(sel, mode) {
     const m = _catMap();
-    return `<option value="">${rowLevel ? 'כמו הקבוצה' : 'קטגוריה…'}</option>` +
+    const head = mode === 'row'  ? '<option value="">כמו הקבוצה</option>'
+               : mode === 'edit' ? (sel ? '' : '<option value="">— בחר —</option>')
+               :                   '<option value="">קטגוריה…</option>';
+    return head +
       Object.keys(m).map(c => `<option${c===sel?' selected':''}>${esc(c)}</option>`).join('') +
-      (rowLevel ? '' : '<option value="__new">+ קטגוריה חדשה…</option>');
+      (mode ? '' : '<option value="__new">+ קטגוריה חדשה…</option>');
   }
-  function _subOpts(cat, sel, rowLevel) {
+  function _subOpts(cat, sel, mode) {
     const m = _catMap();
-    const head = `<option value="">${rowLevel ? '—' : '—'}</option>`;
+    const head = '<option value="">—</option>';
     if (!cat) return head;
     const list = (m[cat] || []).map(x => `<option${x===sel?' selected':''}>${esc(x)}</option>`).join('');
-    return head + list + (rowLevel ? '' : '<option value="__new">+ תת-קטגוריה חדשה…</option>');
+    return head + list + (mode ? '' : '<option value="__new">+ תת-קטגוריה חדשה…</option>');
   }
 
   /* כל התגים שכבר בשימוש — משלימים אוטומטית, כדי ששני טיולים לא ייכתבו
@@ -296,6 +304,7 @@ Pages.expenses = (() => {
       </div>
       <div class="ex-panel">
         <div class="ex-panel-head"><h3>לפי קטגוריה</h3>
+          <button class="ex-mgr-t" type="button">ניהול קטגוריות ✎</button>
           <div class="ex-basis">
             <button class="${_basis==='billing'?'on':''}" data-basis="billing">לפי חיוב</button>
             <button class="${_basis==='date'?'on':''}" data-basis="date">לפי עסקה</button>
@@ -304,14 +313,20 @@ Pages.expenses = (() => {
           <button class="${_month==='all'?'on':''}" data-m="all">כל התקופה</button>
           ${months.map(m => `<button class="${_month===m?'on':''}" data-m="${esc(m)}">${esc(String(m))}</button>`).join('')}
         </div>
-        ${rows.map(c => `<div class="ex-row">
-            <div class="nm">${esc(c.cat)}</div>
-            <div class="ex-track"><i class="ex-fill" style="width:${Math.max(1.5, c.sum/max*100)}%;background:${_catColor(c.cat)}"></i></div>
-            <div class="vl">${money(c.sum)}</div></div>`).join('')}
+        ${rows.map(c => `<div class="ex-crow" data-cat="${esc(c.cat)}">
+            <div class="ex-row is-tap">
+              <div class="nm"><span class="ex-chev">◀</span><span class="ex-nm-t">${esc(c.cat)}</span></div>
+              <div class="ex-track"><i class="ex-fill" style="width:${Math.max(1.5, c.sum/max*100)}%;background:${_catColor(c.cat)}"></i></div>
+              <div class="vl">${money(c.sum)}</div>
+            </div>
+            <div class="ex-edit" hidden></div>
+          </div>`).join('')}
         <div class="ex-note">${sm.pending > 1
           ? `${money(sm.pending)} עדיין לא מסווגים — זה הפס האפור. כל קבוצה שתאשר מעבירה סכום ממנו לקטגוריה אמיתית.`
           : 'כל שקל מסווג. זו התמונה המלאה.'}</div>
+        <div class="ex-note">לחיצה על קטגוריה פותחת את השורות שמרכיבות אותה — שם מתקנים טעות שכבר אושרה.</div>
       </div>
+      ${_mgrHtml()}
       ${sm.byTag.length ? `<div class="ex-panel"><h3>לפי תג</h3>
         ${sm.byTag.map(t => `<div class="ex-row">
             <div class="nm">${esc(t.tag)}</div>
@@ -336,6 +351,7 @@ Pages.expenses = (() => {
 
     $('.ex-card').forEach(c => {
       const item = _itemOf(c.dataset.k);
+      if (!item) return;
       const mems = _memsOf(item);
       const on = item.members ? item.confident : true;
 
@@ -375,6 +391,7 @@ Pages.expenses = (() => {
       _wireNew(c, item);
       _btn(c, item);
     });
+    _wireSpend();
   }
 
   function _wireRows(c, item) {
@@ -386,7 +403,7 @@ Pages.expenses = (() => {
         _syncMems(c, item); _btn(c, item);
       };
       const rc = el.querySelector('.ex-r-cat'), rs = el.querySelector('.ex-r-sub');
-      rc.onchange = () => { rs.innerHTML = _subOpts(rc.value, '', true); _btn(c, item); };
+      rc.onchange = () => { rs.innerHTML = _subOpts(rc.value, '', 'row'); _btn(c, item); };
     });
   }
 
@@ -454,7 +471,7 @@ Pages.expenses = (() => {
         catSel.value = category;
         subSel.innerHTML = _subOpts(category, subcategory);
         subSel.value = subcategory;
-        c.querySelectorAll('.ex-r-cat').forEach(s => { const v = s.value; s.innerHTML = _catOpts('', true); s.value = v; });
+        c.querySelectorAll('.ex-r-cat').forEach(s => { const v = s.value; s.innerHTML = _catOpts('', 'row'); s.value = v; });
         box.hidden = true;
         _btn(c, item);
       } catch (e) {
@@ -464,7 +481,322 @@ Pages.expenses = (() => {
     };
   }
 
-  function _itemOf(k) { return k[0] === 'g' ? _groups[+k.slice(1)] : _singles[+k.slice(1)]; }
+  /* ---------------- שמירת מצב תצוגה ----------------
+     `#content` הוא שנגלל, לא החלון: `#app` הוא flex בגובה 100vh עם
+     overflow hidden. `window.scrollTo` פשוט לא היה עושה כלום.        */
+  const _scrollBox = () => document.getElementById('content') || document.scrollingElement;
+
+  const _erVal = el => ({
+    cat: el.querySelector('.ex-er-cat').value,
+    sub: el.querySelector('.ex-er-sub').value,
+    tag: el.querySelector('.ex-er-tag').value.trim(),
+  });
+
+  function _snap() {
+    if (!_container) return null;
+    const box = _scrollBox();
+    const st = { cards: {}, cats: {}, y: box ? box.scrollTop : 0 };
+    _container.querySelectorAll('.ex-card').forEach(c => {
+      const rows = c.querySelector('.ex-rows');
+      st.cards[c.dataset.k] = {
+        open: c.classList.contains('open'),
+        detail: !!(rows && !rows.hidden),
+        sel: c._sel || null,
+        cat: c.querySelector('.ex-cat').value,
+        sub: c.querySelector('.ex-sub').value,
+        tag: c.querySelector('.ex-tagin').value,
+        rows: [...c.querySelectorAll('.ex-r')].map(el => ({
+          id: el.dataset.id,
+          cat: el.querySelector('.ex-r-cat').value,
+          sub: el.querySelector('.ex-r-sub').value,
+          tag: el.querySelector('.ex-r-tag').value,
+        })),
+      };
+    });
+    _container.querySelectorAll('.ex-crow').forEach(b => {
+      const ed = b.querySelector('.ex-edit');
+      if (!ed || ed.hidden) return;
+      st.cats[b.dataset.cat] = [...ed.querySelectorAll('.ex-er')]
+        .map(el => Object.assign({ id: el.dataset.id }, _erVal(el)));
+    });
+    return st;
+  }
+
+  function _restore(st) {
+    if (!st || !_container) return;
+
+    _container.querySelectorAll('.ex-card').forEach(c => {
+      const s = st.cards[c.dataset.k], item = _itemOf(c.dataset.k);
+      if (!s || !item) return;
+      /* בחירה משוחזרת **רק** לשורות שעדיין ממתינות. שורה שאושרה בינתיים
+         כבר אינה ברשימה, וסימון שלה היה נשאר תלוי באוויר. */
+      if (s.sel) {
+        const live = {};
+        _rowsOf(item).forEach(r => { live[r.id] = 1; });
+        Object.keys(s.sel).forEach(id => { if (live[id]) c._sel[id] = s.sel[id]; });
+      }
+      if (s.cat) {
+        c.querySelector('.ex-cat').value = s.cat;
+        const sub = c.querySelector('.ex-sub');
+        sub.innerHTML = _subOpts(s.cat, s.sub);
+        sub.value = s.sub || '';
+      }
+      c.querySelector('.ex-tagin').value = s.tag || '';
+      if (s.open) c.classList.add('open');
+      if (s.detail) c.querySelector('.ex-detail').click();
+      (s.rows || []).forEach(r => {
+        const el = [...c.querySelectorAll('.ex-r')].find(x => x.dataset.id === r.id);
+        if (!el) return;
+        if (r.cat) {
+          el.querySelector('.ex-r-cat').value = r.cat;
+          const s2 = el.querySelector('.ex-r-sub');
+          s2.innerHTML = _subOpts(r.cat, r.sub, 'row');
+          s2.value = r.sub || '';
+        }
+        el.querySelector('.ex-r-tag').value = r.tag || '';
+      });
+      _syncRows(c); _btn(c, item);
+    });
+
+    Object.keys(st.cats || {}).forEach(cat => {
+      const b = [..._container.querySelectorAll('.ex-crow')].find(x => x.dataset.cat === cat);
+      if (!b) return;
+      b.querySelector('.ex-row').click();          /* בונה, מחווט ופותח */
+      const ed = b.querySelector('.ex-edit');
+      st.cats[cat].forEach(r => {
+        const el = [...ed.querySelectorAll('.ex-er')].find(x => x.dataset.id === r.id);
+        if (!el) return;
+        el.querySelector('.ex-er-cat').value = r.cat;
+        const s2 = el.querySelector('.ex-er-sub');
+        s2.innerHTML = _subOpts(r.cat, r.sub, 'edit');
+        s2.value = r.sub || '';
+        el.querySelector('.ex-er-tag').value = r.tag || '';
+      });
+      if (ed._mark) ed._mark();
+    });
+
+    /* קריאת `scrollHeight` מאלצת פריסה. בלעדיה הדפדפן עדיין מחזיק את
+       הגובה שלפני הציור מחדש, קוצץ את ההשמה לגובה הישן, והמסך קופץ
+       לראש הרשימה — בדיוק מה שהתיקון הזה בא למנוע. ה-rAF תופס את
+       המקרה שבו הפריסה נדחית בכל זאת (תמונות, גופנים).             */
+    const box = _scrollBox();
+    if (box) {
+      void box.scrollHeight;
+      box.scrollTop = st.y;
+      requestAnimationFrame(() => { if (box.scrollTop !== st.y) box.scrollTop = st.y; });
+    }
+  }
+
+  /* ---------------- עריכה אחורה ----------------
+     שורה שכבר אושרה נעלמת ממסך הסיווג — וזה נכון, אחרת הרשימה לא
+     הייתה מתקצרת לעולם. אבל בלי דרך חזרה, טעות אחת נשארת בנתונים
+     לתמיד. הכניסה היא דרך המספר שנראה שגוי: לוחצים על הקטגוריה
+     ומקבלים בדיוק את השורות שמרכיבות אותו, באותו סינון בדיוק.       */
+  const _rowsInCat = cat =>
+    ExpensesEngine.rowsIn(_rows, { basis: _basis, month: _month, washPairs: _wash, cat })
+      .sort((a, b) => Math.abs(b.charge) - Math.abs(a.charge));
+
+  function _editHtml(cat) {
+    const list = _rowsInCat(cat);
+    if (!list.length) return '<div class="ex-note">אין שורות בקטגוריה הזו בתקופה שנבחרה.</div>';
+    return `${list.map(r => `<div class="ex-er" data-id="${esc(r.id)}">
+        <span class="ex-er-d">${_dm(r.date)}</span>
+        <span class="ex-er-n" title="${esc(r.merchant)}">${esc(r.norm)}</span>
+        <span class="ex-er-a">${money(r.charge)}</span>
+        <select class="ex-er-cat">${_catOpts(r.cat, 'edit')}</select>
+        <select class="ex-er-sub">${_subOpts(r.cat, r.sub, 'edit')}</select>
+        <input class="ex-er-tag" list="ex-taglist" placeholder="תג" value="${esc(r.tag || '')}">
+      </div>`).join('')}
+      <div class="ex-er-foot">
+        <button class="ex-er-save" type="button" disabled>אין שינויים</button>
+        <span class="ex-er-msg">${list.length} ${list.length === 1 ? 'שורה' : 'שורות'} · שינוי נשמר רק בלחיצה</span>
+      </div>`;
+  }
+
+  function _wireEdit(ed) {
+    const save = ed.querySelector('.ex-er-save'), msg = ed.querySelector('.ex-er-msg');
+    if (!save) return;
+    /* מצב הפתיחה הוא נקודת האמת. "מה השתנה" נמדד מולו, ולכן שינוי
+       וחזרה לערך המקורי אינם נחשבים שינוי — ולא נשלחים לשרת.        */
+    const base = {};
+    const cards = () => [...ed.querySelectorAll('.ex-er')];
+    const dirty = () => cards().filter(el => {
+      const a = base[el.dataset.id], b = _erVal(el);
+      return a && (a.cat !== b.cat || a.sub !== b.sub || a.tag !== b.tag);
+    });
+    function mark() {
+      const d = dirty(), blank = d.filter(el => !_erVal(el).cat).length;
+      save.disabled = !d.length || blank > 0;
+      save.textContent = !d.length ? 'אין שינויים'
+        : blank ? `${blank} שורות בלי קטגוריה`
+        : `שמור ${d.length} ${d.length === 1 ? 'שינוי' : 'שינויים'}`;
+    }
+    ed._mark = mark;
+    cards().forEach(el => {
+      base[el.dataset.id] = _erVal(el);
+      el.querySelector('.ex-er-cat').onchange = e => {
+        const s = el.querySelector('.ex-er-sub');
+        s.innerHTML = _subOpts(e.target.value, '', 'edit');
+        mark();
+      };
+      el.querySelector('.ex-er-sub').onchange = mark;
+      el.querySelector('.ex-er-tag').oninput = mark;
+    });
+
+    save.onclick = async () => {
+      const d = dirty();
+      if (!d.length) return;
+      const items = d.map(el => {
+        const v = _erVal(el);
+        return { id: el.dataset.id, category: v.cat, subcategory: v.sub, tag: v.tag };
+      });
+      save.disabled = true; save.textContent = 'שומר…';
+      try {
+        /* בלי `rule`. תיקון של טעות אינו הצהרה על כל העתיד — כלל נוצר
+           רק במסך הסיווג, שם זו בחירה מפורשת עם תיבת סימון.          */
+        await DataService.post('expenses.approve', { items, rule: null },
+          { writeId: 'ed-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) });
+        const by = {};
+        items.forEach(x => { by[x.id] = x; });
+        _rows.forEach(r => {
+          const x = by[r.id];
+          if (!x) return;
+          r.cat = x.category; r.sub = x.subcategory; r.tag = x.tag; r.status = 'ok';
+        });
+        _recompute();
+        _paint(_snap());
+      } catch (e) {
+        save.disabled = false; mark();
+        if (e && e.unauthorized) return;
+        msg.textContent = 'לא נשמר: ' + (e && e.message ? e.message : e);
+      }
+    };
+    mark();
+  }
+
+  /* ---------------- ניהול קטגוריות ----------------
+     אין פעולת "מזג" נפרדת: שינוי שם לשם שכבר קיים **הוא** האיחוד.
+     שתי פעולות שעושות אותו דבר היו רק מכריחות לבחור ביניהן. הספירה
+     מוצגת לפני האישור, כי זו הפעולה היחידה במערכת שנוגעת בשורות
+     שכבר אושרו — ואין לה ביטול.                                     */
+  const _countCat = (cat, sub) =>
+    _rows.filter(r => r.cat === cat && (!sub || (r.sub || '') === sub)).length;
+
+  function _mgrHtml() {
+    if (!_mgr) return '';
+    const m = _catMap();
+    return `<div class="ex-panel ex-mgr">
+      <div class="ex-panel-head"><h3>ניהול קטגוריות</h3>
+        <button class="ex-mgr-x" type="button">סגור</button></div>
+      ${_mgrMsg ? `<div class="ex-mgr-ok">${esc(_mgrMsg)}</div>` : ''}
+      ${Object.keys(m).map(cat => `
+        <div class="ex-mg" data-cat="${esc(cat)}">
+          <div class="ex-mg-h" data-sub="">
+            <i class="ex-dotc" style="background:${_catColor(cat)}"></i>
+            <b class="ex-mg-n">${esc(cat)}</b>
+            <span class="ex-mg-c">${_countCat(cat)} שורות</span>
+            <button class="ex-mg-e" type="button" title="שנה שם לקטגוריה">✎</button>
+          </div>
+          ${(m[cat] || []).filter(Boolean).map(sub => `
+            <div class="ex-mg-h ex-mg-s" data-sub="${esc(sub)}">
+              <span class="ex-mg-n">${esc(sub)}</span>
+              <span class="ex-mg-c">${_countCat(cat, sub)}</span>
+              <button class="ex-mg-e" type="button" title="שנה שם או אחד עם קיים">✎</button>
+            </div>`).join('')}
+        </div>`).join('')}
+      <div class="ex-note">שם חדש שכבר קיים = <b>איחוד</b>. כל השורות של הישן עוברות אליו, והשם הישן נעלם מהרשימה ומהכללים. אין ביטול — לכן מוצג כמה שורות יזוזו לפני האישור.</div>
+    </div>`;
+  }
+
+  function _mgrEdit(host, cat, sub) {
+    if (host.querySelector('.ex-mg-in')) return;
+    const cur = sub || cat, keep = host.innerHTML;
+    const back = () => { host.innerHTML = keep; _wireMgr(); };
+    host.innerHTML = `<input class="ex-mg-in" value="${esc(cur)}">
+      <button class="ex-mg-ok" type="button">שמור</button>
+      <button class="ex-mg-no" type="button">ביטול</button>
+      <span class="ex-mg-msg"></span>`;
+    const inp = host.querySelector('.ex-mg-in'), msg = host.querySelector('.ex-mg-msg');
+
+    const exists = v => {
+      const m = _catMap();
+      return sub ? (m[cat] || []).indexOf(v) >= 0 : Object.keys(m).indexOf(v) >= 0;
+    };
+    const preview = () => {
+      const v = inp.value.trim(), n = _countCat(cat, sub);
+      msg.textContent = !v ? 'צריך שם.'
+        : v === cur ? ''
+        : exists(v) ? `יאוחד עם "${v}" — ${n} ${n === 1 ? 'שורה תעבור' : 'שורות יעברו'}.`
+        : `${n} ${n === 1 ? 'שורה תשנה' : 'שורות ישנו'} שם.`;
+    };
+    inp.oninput = preview; preview();
+    inp.focus(); inp.select();
+    inp.onkeydown = e => {
+      if (e.key === 'Enter') { e.preventDefault(); host.querySelector('.ex-mg-ok').click(); }
+      if (e.key === 'Escape') back();
+    };
+    host.querySelector('.ex-mg-no').onclick = back;
+    host.querySelector('.ex-mg-ok').onclick = async () => {
+      const v = inp.value.trim();
+      if (!v) { msg.textContent = 'צריך שם.'; return; }
+      if (v === cur) { back(); return; }
+      msg.textContent = 'שומר…';
+      try {
+        const res = await DataService.post('categories.rename',
+          sub ? { category: cat, subcategory: sub, toCategory: cat, toSubcategory: v }
+              : { category: cat, toCategory: v },
+          { writeId: 'rn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) });
+        DataService.clearCache && DataService.clearCache();
+        const n = (res && res.moved) || 0;
+        _mgrMsg = `"${cur}" → "${v}" · ${n} ${n === 1 ? 'שורה עודכנה' : 'שורות עודכנו'}` +
+                  (res && res.merged ? ' (אוחד).' : '.');
+        await _load();
+      } catch (e) {
+        if (e && e.unauthorized) return;
+        msg.textContent = 'לא נשמר: ' + (e && e.message ? e.message : e);
+      }
+    };
+  }
+
+  function _wireMgr() {
+    _container.querySelectorAll('.ex-mgr .ex-mg-e').forEach(b => {
+      b.onclick = () => {
+        const host = b.closest('.ex-mg-h');
+        _mgrEdit(host, host.closest('.ex-mg').dataset.cat, host.dataset.sub || '');
+      };
+    });
+  }
+
+  function _wireSpend() {
+    _container.querySelectorAll('.ex-crow').forEach(b => {
+      const ed = b.querySelector('.ex-edit');
+      b.querySelector('.ex-row').onclick = () => {
+        const open = ed.hidden;
+        if (open && !ed.dataset.built) {
+          ed.innerHTML = _editHtml(b.dataset.cat);
+          ed.dataset.built = '1';
+          _wireEdit(ed);
+        }
+        ed.hidden = !open;
+        b.classList.toggle('open', open);
+      };
+    });
+    const t = _container.querySelector('.ex-mgr-t');
+    if (t) t.onclick = () => { _mgr = !_mgr; if (!_mgr) _mgrMsg = ''; _paint(_snap()); };
+    const x = _container.querySelector('.ex-mgr-x');
+    if (x) x.onclick = () => { _mgr = false; _mgrMsg = ''; _paint(_snap()); };
+    _wireMgr();
+  }
+
+  /* ⛔ המפתח **אינו** מיקום ברשימה. `g0`/`s3` נראו תמימים, אבל הרשימה
+     נבנית מחדש אחרי כל אישור — ולכן כל שחזור של מצב תצוגה לפי מיקום
+     היה מחזיר את הפתיחה, הבחירה והסימון לכרטיס **אחר** שתפס את המקום.
+     המפתח חייב להיות תכונה של הקבוצה עצמה — אותו מפתח בדיוק כמו `_busy`. */
+  function _itemOf(k) {
+    const all = (_groups || []).concat(_singles || []);
+    for (let i = 0; i < all.length; i++) if (_busyKey(all[i]) === k) return all[i];
+    return null;
+  }
   function _memsOf(item) { return item.members || [item]; }
 
   function _btn(c, item) {
@@ -532,9 +864,15 @@ Pages.expenses = (() => {
       /* ניקוי גם במסלול ההצלחה. בלעדיו הסימון נשאר לנצח, וכיוון
          שהרשימה נבנית מחדש — כפתור של קבוצה אחרת ננעל על ״שומר״. */
       delete _busy[bk];
+      /* צילום **לפני** הציור מחדש: כרטיסים פתוחים, בחירות שורה, בוררים
+         שכבר נגעו בהם ומקום הגלילה. בלעדיו כל שמירה החזירה את המסך
+         לראש הרשימה וסגרה כרטיסים שנפתחו לעריכה — בדיוק המצב שבו
+         מדייקים כמה שורות ברצף.                                       */
+      const keep = _snap();
+      delete keep.cards[bk];
       _recompute();
       c.classList.add('gone');
-      setTimeout(() => { _paint(); }, 380);
+      setTimeout(() => { _paint(keep); }, 380);
     } catch (e) {
       delete _busy[bk]; _btn(c, item);
       if (e && e.unauthorized) return;

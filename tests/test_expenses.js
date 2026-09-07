@@ -134,5 +134,42 @@ console.log('');
   ok('שורה בלי תג לא נספרת', st.byTag.reduce((a, x) => a + x.sum, 0) < st.total);
 }
 
+
+/* ── rowsIn חייב להסכים עם summarize ──
+   המסך מציג "₪1,200 מזון" ומתחתיו נפתחת רשימת השורות. אם השתיים
+   מסננות אפילו קצת אחרת, יועד רואה סכום שאינו מסתדר עם מה שמתחתיו
+   ומאבד אמון בכל המספרים. הבדיקה נועלת את השוויון.                */
+(function () {
+  const opt = { basis: 'billing', washPairs: E.washPairs(rows) };
+  const s = E.summarize(rows, opt);
+  s.byCat.forEach(function (c) {
+    const list = E.rowsIn(rows, Object.assign({ cat: c.cat }, opt));
+    const sum = Math.round(list.reduce(function (a, r) { return a + r.charge; }, 0) * 100) / 100;
+    ok('rowsIn=summarize · ' + c.cat, Math.abs(sum - c.sum) < 0.01, sum + ' ≠ ' + c.sum);
+  });
+  ok('rowsIn: יש קטגוריות לבדוק', s.byCat.length > 0, s.byCat.length);
+
+  /* אותו דבר בתוך חודש בודד */
+  if (s.byMonth.length) {
+    const m = s.byMonth[0].month;
+    const sm = E.summarize(rows, Object.assign({ month: m }, opt));
+    sm.byCat.forEach(function (c) {
+      const list = E.rowsIn(rows, Object.assign({ cat: c.cat, month: m }, opt));
+      const sum = Math.round(list.reduce(function (a, r) { return a + r.charge; }, 0) * 100) / 100;
+      ok('rowsIn חודשי · ' + c.cat, Math.abs(sum - c.sum) < 0.01, sum + ' ≠ ' + c.sum);
+    });
+  }
+
+  /* שורות שקוזזו (wash) אינן ברשימה, כפי שאינן בסכום */
+  const w = E.washPairs(rows);
+  if (w.length) {
+    const all = E.rowsIn(rows, opt).map(function (r) { return r.id; });
+    ok('rowsIn: שורת קיזוז מוחרגת', all.indexOf(w[0].credit.id) < 0);
+  }
+  ok('rowsIn בלי cat מחזיר הכול פרט לקיזוזים',
+     E.rowsIn(rows, opt).length === rows.length - w.length * 2,
+     E.rowsIn(rows, opt).length + ' vs ' + (rows.length - w.length * 2));
+})();
+
 console.log(fail===0 ? '✅ כל '+pass+' הבדיקות עברו' : '❌ '+fail+' נכשלו מתוך '+(pass+fail));
 process.exit(fail?1:0);

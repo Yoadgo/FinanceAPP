@@ -891,6 +891,109 @@ function upsertCategory_(ss, body) {
   return { created: 1, category: cat, subcategory: sub };
 }
 
+/* ---- שינוי שם ואיחוד ------------------------------------------------
+   זו הפעולה **היחידה** במערכת שנוגעת בשורות שכבר אושרו, ולכן היא
+   מפורשת לגמרי: הלקוח שולח מאיפה ולאן, והשרת מחזיר כמה שורות זזו.
+   שם יעד שכבר קיים אינו שגיאה — הוא בדיוק האיחוד ("בית קפה" +
+   "מסעדה" → "בית קפה/מסעדות"), ושורת המקור נמחקת מהקטלוג כדי שלא
+   יישאר בבורר שם שאף שורה כבר לא נושאת.
+   תת-קטגוריה ריקה במקור פירושה **הקטגוריה כולה**, על כל תת-סעיפיה.  */
+
+/* טהור — כדי שאפשר יהיה לבדוק את ההחלטה בלי גיליון. */
+function renamePlan_(rows, from, fromS, to, toS) {
+  /* מקור ריק היה תופס את **כל** השורות שעדיין לא סווגו ומסווג אותן
+     בבת אחת בשם היעד. מוקדם ושקט מכדי להסתמך רק על בדיקת הקלט למעלה. */
+  if (!from) return [];
+  var whole = !fromS, out = [];
+  (rows || []).forEach(function (r) {
+    var c = String(r.Category == null ? '' : r.Category).trim();
+    var s = String(r.Subcategory == null ? '' : r.Subcategory).trim();
+    if (c !== from) return;
+    if (!whole && s !== fromS) return;
+    var nc = to, ns = whole ? s : toS;
+    if (nc === c && ns === s) return;          /* כבר שם — לא כתיבה */
+    out.push({ row: r, category: nc, subcategory: ns });
+  });
+  return out;
+}
+
+/* כתיבה בבלוק אחד לכל גיליון שיש בו זוג העמודות. גיליון ריק או בלי
+   העמודות מוחזר כאפס ולא כשגיאה — ל-Bank עשויות עדיין לא להיות שורות. */
+function rewriteCatCols_(e, from, fromS, to, toS) {
+  var t = readTable_(e.sheet);
+  if (!t.rows.length) return 0;
+  var iCat = t.headers.indexOf('Category');
+  if (iCat < 0) return 0;
+  var iSub = t.headers.indexOf('Subcategory'), iUp = t.headers.indexOf('UpdatedAt');
+  var hits = renamePlan_(t.rows, from, fromS, to, toS);
+  if (!hits.length) return 0;
+
+  var first = t.rows[0]._row, last = t.rows[t.rows.length - 1]._row;
+  var block = e.sheet.getRange(first, 1, last - first + 1, t.headers.length);
+  var vals = block.getValues(), now = nowIso_();
+  hits.forEach(function (h) {
+    var i = h.row._row - first;
+    vals[i][iCat] = h.category;
+    if (iSub >= 0) vals[i][iSub] = h.subcategory;
+    if (iUp >= 0) vals[i][iUp] = now;
+  });
+  block.setValues(vals);
+  return hits.length;
+}
+
+/* הקטלוג עצמו: השם החדש חייב להופיע פעם אחת בדיוק, והישן לא להופיע
+   כלל. כפילות שנוצרת מהאיחוד נמחקת — **מלמטה למעלה**, כי כל מחיקה
+   מזיזה את מספרי השורות שמתחתיה.                                    */
+function renameCatalog_(ss, from, fromS, to, toS) {
+  var e = categoriesSheet_(ss), t = readTable_(e.sheet), now = nowIso_();
+  var whole = !fromS, seen = {}, kill = [], merged = false, renamed = 0;
+
+  t.rows.forEach(function (r) {
+    var c = String(r.Category || '').trim(), s = String(r.Subcategory || '').trim();
+    var hit = (c === from) && (whole || s === fromS);
+    var nc = hit ? to : c, ns = hit ? (whole ? s : toS) : s;
+    var key = nc + '|' + ns;
+
+    if (seen[key]) { kill.push(r._row); merged = true; return; }
+    seen[key] = 1;
+    if (!hit || (nc === c && ns === s)) return;
+
+    writeRow_(e.sheet, t.headers, r._row, {
+      Category: nc, Subcategory: ns,
+      Active: (r.Active === '' || r.Active == null) ? true : r.Active,
+      Order: r.Order, Notes: r.Notes || '', UpdatedAt: now });
+    renamed++;
+  });
+
+  kill.sort(function (a, b) { return b - a; })
+      .forEach(function (rw) { e.sheet.deleteRow(rw); });
+  return { renamed: renamed, removed: kill.length, merged: merged };
+}
+
+function renameCategory_(ss, body) {
+  var from  = String(body && body.category    || '').trim();
+  var fromS = String(body && body.subcategory || '').trim();
+  var to    = String(body && body.toCategory  || '').trim() || from;
+  var toS   = String(body && body.toSubcategory || '').trim();
+  if (!from) throw new Error('חסרה קטגוריית מקור');
+  if (!to)   throw new Error('חסר שם יעד');
+  if (fromS && !toS) throw new Error('חסר שם יעד לתת-הקטגוריה');
+  if (from === to && fromS === toS) return { moved: 0, rules: 0, unchanged: true };
+
+  var moved = rewriteCatCols_(expensesSheet_(ss), from, fromS, to, toS);
+  var bank  = ss.getSheetByName('Bank')
+    ? rewriteCatCols_(bankSheet_(ss), from, fromS, to, toS) : 0;
+  /* גם הכללים — אחרת הקליטה הבאה הייתה מחזירה את השם הישן לחיים. */
+  var rules = ss.getSheetByName(ING.rulesSheet)
+    ? rewriteCatCols_(rulesSheet_(ss), from, fromS, to, toS) : 0;
+  var cat   = renameCatalog_(ss, from, fromS, to, toS);
+
+  return { moved: moved, bank: bank, rules: rules,
+           merged: cat.merged, removed: cat.removed,
+           from: from + (fromS ? ' › ' + fromS : ''),
+           to:   to   + (fromS ? ' › ' + toS   : '') };
+}
+
 /* כתיבת כלל בלבד — הוראה לקליטות הבאות. **אינו נוגע בשורה קיימת.** */
 function upsertRule_(ss, rule, cat, sub) {
   var pattern = String(rule.pattern || '').trim();
@@ -951,6 +1054,7 @@ function ingestApiRead_(ss, r, params) {
 function ingestApiWrite_(ss, action, body) {
   if (action === 'expenses.approve')      return approveExpenses_(ss, body);
   if (action === 'categories.upsert')     return upsertCategory_(ss, body);
+  if (action === 'categories.rename')     return renameCategory_(ss, body);
   if (action === 'expenses.classify')     return classifyMerchant_(ss, body);
   if (action === 'expenses.recategorize') return recategorize_(ss, { onlyPending: !body.all });
   if (action === 'ingest.run')            return ingestInbox_({ dryRun: !!body.dryRun });
@@ -959,6 +1063,7 @@ function ingestApiWrite_(ss, action, body) {
 
 if (typeof module !== 'undefined') module.exports = {
   approveItems_: approveItems_, EXPENSE_COLS: EXPENSE_COLS,
+  renamePlan_: renamePlan_, CATEGORY_COLS: CATEGORY_COLS,
   suggestBankBucket_: suggestBankBucket_, SEED_BANK_RULES_: SEED_BANK_RULES_,
   BUCKETS_: BUCKETS_, BANK_COLS: BANK_COLS, inferFreq_: inferFreq_,
   normMerchant_: normMerchant_, suggestCategory_: suggestCategory_,
