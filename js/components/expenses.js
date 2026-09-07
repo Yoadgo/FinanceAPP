@@ -22,7 +22,9 @@ Pages.expenses = (() => {
      לה את הכפתור לתמיד. המפתח חייב להיות תכונה של הקבוצה עצמה.      */
   const _busyKey = item => (item.members ? 'g:' + item.token : 's:' + item.norm);
 
-  const money = v => '₪' + Math.round(Math.abs(v)).toLocaleString('he-IL');
+  /* מימוש אחד ב-`js/ui/money.js`. הכינוי המקומי נשאר כדי שאתרי הקריאה
+     יישארו קצרים — מה שהיה כפול הוא הפורמט, לא השם. */
+  const money = v => FA.money.ils(v);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
   /* מילות עצירה. הבסיס כאן, והרחבות מגיעות מהגיליון — ערים וסיומות

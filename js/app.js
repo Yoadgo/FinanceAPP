@@ -69,7 +69,9 @@ const App = (() => {
         navHTML += `
           <div class="nav-item ${isActive}" data-page="${item.id}">
             <span class="nav-icon">${item.icon}</span>
-            <span class="nav-label">${item.label}</span>
+            <span class="nav-label">
+              <b>${item.label}</b>${item.hint ? `<small>${item.hint}</small>` : ""}
+            </span>
           </div>`;
       });
     });

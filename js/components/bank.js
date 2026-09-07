@@ -10,8 +10,10 @@ const BankView = (() => {
 
   let _rows = null, _container = null, _month = 'all', _open = {}, _busy = false;
 
-  const money = v => '₪' + Math.round(Math.abs(v)).toLocaleString('he-IL');
-  const signed = v => (v < 0 ? '−' : '') + money(v);
+  /* מימוש אחד ב-`js/ui/money.js`. הכינוי המקומי נשאר כדי שאתרי הקריאה
+     יישארו קצרים — מה שהיה כפול הוא הפורמט, לא השם. */
+  const money = v => FA.money.ils(v);
+  const signed = v => FA.money.signed(v);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c =>
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
