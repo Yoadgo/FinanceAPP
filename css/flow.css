@@ -1,0 +1,68 @@
+/* ===== תזרים — כמה נשאר =====
+   נשען על השלד של expenses.css. מוסיף רק את מה שייחודי: כרטיס
+   ״נשאר״ מודגש, פס כפול נכנס/יצא, ופס אזהרה ללא-מסווגים.        */
+
+.fl { display:block; }
+
+/* ״נשאר״ הוא התשובה של המסך, ולכן הוא הכרטיס היחיד שנצבע. */
+.ex-kpi.fl-big { background:var(--dom-spend); border-color:var(--dom-spend); }
+.ex-kpi.fl-big .l, .ex-kpi.fl-big .d { color:rgba(255,255,255,.82); }
+.ex-kpi.fl-big .v { color:#fff; }
+.ex-kpi.fl-big.neg { background:var(--danger,#DC2626); border-color:var(--danger,#DC2626); }
+.fl-m-v.neg, .fl-avg .v.neg { color:var(--danger,#DC2626); }
+
+/* ── אזהרת לא-מסווגים ── */
+.fl-warn {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:#FEF3C7; border:1px solid #FCD34D; border-radius:var(--r-md);
+  padding:12px 16px; margin-bottom:18px;
+}
+.fl-warn b { font-size:13.5px; color:#92400E; }
+.fl-warn span { font-size:12.5px; color:#78350F; flex:1 1 240px; line-height:1.45; }
+.fl-go { border:0; background:#92400E; color:#fff; font:inherit; font-size:12.5px;
+  font-weight:600; padding:7px 16px; border-radius:var(--r-pill); cursor:pointer; }
+
+/* ── חודש אחר חודש ── */
+.fl-m { border-radius:var(--r-xs); margin-bottom:2px; }
+.fl-m.open { background:var(--bg-subtle); }
+.fl-m-h { display:grid; align-items:center; gap:12px; cursor:pointer;
+  grid-template-columns:14px 72px 1fr 104px 52px; padding:10px 6px;
+  border-radius:var(--r-xs); transition:background var(--t-press); }
+.fl-m-h:hover { background:var(--bg-subtle); }
+.fl-m.open .ex-chev { transform:rotate(-90deg); }
+.fl-m-n { font-size:13px; font-variant-numeric:tabular-nums; font-weight:550; }
+.fl-m-v { text-align:start; font-variant-numeric:tabular-nums; font-weight:600; font-size:13px; }
+.fl-m-r { text-align:start; font-size:12px; color:var(--text-muted);
+  font-variant-numeric:tabular-nums; }
+.fl-m-d { font-size:11.5px; color:var(--text-muted); padding:0 6px 8px 26px; margin-top:-6px; }
+.fl-m-c { padding:4px 10px 12px; border-top:1px solid var(--border); margin:0 6px 8px; }
+
+/* שני פסים באותה רצועה: נכנס למעלה, יצא מתחת. ההשוואה היא כל העניין. */
+.fl-bars { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.fl-bars i { display:block; height:8px; border-radius:var(--r-pill);
+  transition:width var(--t-glide); min-width:2px; }
+.fl-bars .in  { background:#059669; }
+.fl-bars .out { background:#DC2626; }
+.ex-dot.in  { background:#059669; }
+.ex-dot.out { background:#DC2626; }
+
+/* ── חודש ממוצע ── */
+.fl-based { font-size:12px; color:var(--text-muted); }
+.fl-avg { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+.fl-avg > div { flex:1 1 130px; background:var(--bg-subtle); border-radius:var(--r-sm);
+  padding:12px 14px; display:flex; flex-direction:column; gap:4px; }
+.fl-avg .hi { background:var(--bg-surface); box-shadow:inset 0 0 0 2px var(--dom-spend); }
+.fl-avg .l { font-size:12px; color:var(--text-secondary); }
+.fl-avg .v { font-size:19px; font-weight:650; font-variant-numeric:tabular-nums; }
+.fl-src { font-size:10.5px; color:var(--text-muted); margin-inline-start:7px; }
+.fl-foot { margin-top:18px; }
+
+@media (max-width:720px) {
+  .fl-m-h { grid-template-columns:14px 1fr auto; grid-template-areas:
+      "c n v" "b b b"; row-gap:8px; }
+  .fl-m-h .ex-chev { grid-area:c; } .fl-m-n { grid-area:n; }
+  .fl-m-v { grid-area:v; } .fl-bars { grid-area:b; }
+  .fl-m-r { display:none; }
+  .fl-m-d { padding-inline-start:26px; }
+  .fl-avg > div { flex:1 1 100%; }
+}

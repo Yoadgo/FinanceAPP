@@ -50,8 +50,13 @@ const NAV_STRUCTURE = [
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/><path d="M7 15h4"/></svg>`
       },
       {
+        id: "flow",
+        label: "תזרים",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>`
+      },
+      {
         id: "cashflow",
-        label: "הכנסות והוצאות",
+        label: "תזרים תיקים",
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>`
       }
     ]
@@ -67,5 +72,6 @@ const PAGE_TITLES = {
   research:   { title: "תחקור",             section: "השקעות וחסכונות" },
   journal:    { title: "יומן תנועות",        section: "השקעות וחסכונות" },
   expenses:   { title: "תנועות",            section: "ניהול תזרים" },
-  cashflow:   { title: "הכנסות והוצאות",   section: "ניהול תזרים" },
+  flow:       { title: "תזרים",             section: "ניהול תזרים" },
+  cashflow:   { title: "תזרים תיקים",       section: "ניהול תזרים" },
 };
