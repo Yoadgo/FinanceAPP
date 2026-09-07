@@ -16,6 +16,12 @@ Pages.expenses = (() => {
   let _groups = null, _singles = null, _wash = null, _anchors = null;
   let _busy = {};
 
+  /* ⛔ `_busy` **לא** ממופתח לפי `data-k`. המפתח הזה הוא מיקום ברשימה
+     (`g0`, `s3`), והרשימה נבנית מחדש אחרי כל אישור — כך שסימון ״שומר״
+     של קבוצה שנשמרה היה עובר לקבוצה **אחרת** שתפסה את המיקום, ונועל
+     לה את הכפתור לתמיד. המפתח חייב להיות תכונה של הקבוצה עצמה.      */
+  const _busyKey = item => (item.members ? 'g:' + item.token : 's:' + item.norm);
+
   const money = v => '₪' + Math.round(Math.abs(v)).toLocaleString('he-IL');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
@@ -73,7 +79,7 @@ Pages.expenses = (() => {
   }
 
   function render(container) {
-    _container = container; _tab = 'sort'; _month = 'all';
+    _container = container; _tab = 'sort'; _month = 'all'; _busy = {};
     container.innerHTML = FA.skel ? FA.skel.tablePage(8, 4) : '<div class="ex-load">טוען…</div>';
     _load();
   }
@@ -471,8 +477,9 @@ Pages.expenses = (() => {
        קטגוריה קבוצתית, כל עוד לכל שורה נבחרת יש אחת.                 */
     const uncovered = chosen.length - perRow;
     const btn = c.querySelector('.ex-go');
-    btn.disabled = !chosen.length || (!cat && uncovered > 0) || _busy[c.dataset.k];
-    btn.textContent = _busy[c.dataset.k] ? 'שומר…'
+    const busy = _busy[_busyKey(item)];
+    btn.disabled = !chosen.length || (!cat && uncovered > 0) || busy;
+    btn.textContent = busy ? 'שומר…'
       : !chosen.length ? 'לא נבחר דבר'
       : (!cat && uncovered > 0) ? `בחר קטגוריה (${uncovered} שורות בלי)`
       : `אשר ${chosen.length} ${chosen.length === 1 ? 'שורה' : 'שורות'} · ${money(sum)}`;
@@ -507,7 +514,8 @@ Pages.expenses = (() => {
     });
     if (items.some(x => !x.category)) return;
 
-    _busy[c.dataset.k] = true; _btn(c, item);
+    const bk = _busyKey(item);
+    _busy[bk] = true; _btn(c, item);
     try {
       await DataService.post('expenses.approve', {
         items,
@@ -521,11 +529,14 @@ Pages.expenses = (() => {
         if (!x) return;
         r.cat = x.category; r.sub = x.subcategory; r.tag = x.tag; r.status = 'ok';
       });
+      /* ניקוי גם במסלול ההצלחה. בלעדיו הסימון נשאר לנצח, וכיוון
+         שהרשימה נבנית מחדש — כפתור של קבוצה אחרת ננעל על ״שומר״. */
+      delete _busy[bk];
       _recompute();
       c.classList.add('gone');
       setTimeout(() => { _paint(); }, 380);
     } catch (e) {
-      _busy[c.dataset.k] = false; _btn(c, item);
+      delete _busy[bk]; _btn(c, item);
       if (e && e.unauthorized) return;
       alert('השמירה נכשלה: ' + (e && e.message ? e.message : e) + '\nשום דבר לא נכתב.');
     }

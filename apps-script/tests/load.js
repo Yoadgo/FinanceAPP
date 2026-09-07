@@ -8,4 +8,16 @@ function load(name) {
   new Function('module', 'exports', code)(m, m.exports);
   return m.exports;
 }
-module.exports = { load };
+/* טוען כמה קבצי .gs לאותו סקופ, כמו ש-Apps Script עושה בפועל. נחוץ
+   כשפונקציה בקובץ אחד קוראת לפונקציה מקובץ אחר — למשל detectKind_
+   ב-ingest.gs שקורא ל-isBankSheet_ ב-bankParser.gs. טעינה בנפרד הייתה
+   מסתירה בדיוק את סוג התקלה שהבדיקה אמורה לתפוס.                     */
+function loadAll(names) {
+  const code = names.map(n =>
+    fs.readFileSync(path.join(__dirname, '..', n), 'utf8')).join('\n;\n');
+  const m = { exports: {} };
+  new Function('module', 'exports', code)(m, m.exports);
+  return m.exports;
+}
+module.exports = { load, loadAll };
+

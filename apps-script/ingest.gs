@@ -289,6 +289,9 @@ function detectKind_(values) {
       if (s.indexOf('כרטיס:') !== -1 && s.indexOf('חודש החיוב') !== -1) return 'credit';
     }
   }
+  /* אשראי נבדק ראשון כי הסימן שלו חד-משמעי. עו״ש נבדק אחריו, בפונקציה
+     שחיה בפרסר עצמו — כדי שמי שמשנה את מבנה הקובץ ישנה מקום אחד.    */
+  if (typeof isBankSheet_ === 'function' && isBankSheet_(values)) return 'bank';
   return 'unknown';
 }
 
@@ -315,6 +318,17 @@ function ingestInbox_(opts) {
   var nextId = existing.length;
   var toWrite = [], impRows = [], now = nowIso_();
 
+  /* הטאב של הבנק נפתח תמיד, גם כשאין קובץ עו״ש בתיקייה. גיליון שנוצר
+     רק כשמגיע הקובץ הראשון מייצר מצב שבו הקריאה מהאפליקציה נכשלת עד
+     לקליטה — והמסך נראה שבור במקום ריק.                              */
+  var eBank = bankSheet_(ss);
+  var bankExisting = readTable_(eBank.sheet).rows;
+  var bankCounts = {};
+  bankExisting.forEach(function (r) {
+    var k = String(r.Key || ''); if (k) bankCounts[k] = (bankCounts[k] || 0) + 1;
+  });
+  var bankToWrite = [], bankNextId = bankExisting.length;
+
   var it = DriveApp.getFolderById(ING.inboxFolderId).getFiles();
   var seenFiles = 0;
   while (it.hasNext() && seenFiles < ING.maxFilesPerRun) {
@@ -340,6 +354,59 @@ function ingestInbox_(opts) {
     catch (err) { report.files.push({ name: name, status: 'error', message: String(err) }); continue; }
 
     var kind = detectKind_(values);
+
+    if (kind === 'bank') {
+      var bp = parseBankSheet_(values);
+      var brows = withBankOccurrence_(bp.rows);
+      var bd = diffAgainstExisting_(brows, bankCounts);
+      var bRec = {
+        name: name, status: 'ok', kind: kind,
+        billingMonth: (bp.meta.from || '') + ' → ' + (bp.meta.to || ''),
+        parsed: brows.length, added: bd.add.length, skipped: bd.skipped,
+        warnings: bp.warnings.slice(0)
+      };
+
+      if (!brows.length) {
+        bRec.status = 'rejected';
+        bRec.warnings.push('לא נמצאו תנועות — הקובץ נדחה.');
+      } else {
+        var freqMap = inferFreq_(brows);
+        bd.add.forEach(function (rec) {
+          var sg = suggestBankBucket_(rec);
+          bankNextId++;
+          bankToWrite.push(objToLine_(eBank.headers, {
+            Id: 'B' + ('00000' + bankNextId).slice(-6),
+            Date: rec.date, ValueDate: rec.valueDate, OpCode: rec.opCode, Ref: rec.ref,
+            Desc: rec.desc, Amount: rec.amount, Debit: rec.debit, Credit: rec.credit,
+            Bucket: sg.bucket, Category: sg.category, Subcategory: sg.subcategory,
+            /* התדירות מהכלל גוברת על ההיסק: כלל הוא ידע, היסק על שלושה
+               חודשים הוא סברה. */
+            Freq: sg.freq || freqMap[String(rec.desc).replace(/\d+/g, '#').trim()] || '',
+            Tag: '', GoalId: '', SettlesCard: sg.settlesCard, SettlesMonth: '',
+            /* שורה שאף כלל לא זיהה נשארת `pending` **בלי דלי**. ניחוש
+               שקט כאן הופך ₪216,554 של בית להוצאה. */
+            Status: sg.hit ? 'auto' : 'pending', RuleId: sg.hit ? sg.why : '',
+            Source: 'bank', FileHash: hash.slice(0, 12), SheetRow: rec.sheetRow,
+            Key: rec.key, Occ: rec.occ, CreatedAt: now, UpdatedAt: now
+          }));
+          bankCounts[rec.key] = (bankCounts[rec.key] || 0) + 1;
+        });
+        report.added += bd.add.length;
+        report.skipped += bd.skipped;
+      }
+
+      report.files.push(bRec);
+      impRows.push(objToLine_(eImp.headers, {
+        Id: 'I' + Utilities.getUuid().slice(0, 8), At: now, FileId: f.getId(), FileName: name,
+        Hash: hash, Kind: kind, BillingMonth: bRec.billingMonth, Sections: '', Balanced: '',
+        RowsParsed: brows.length, RowsAdded: bRec.status === 'ok' ? bd.add.length : 0,
+        RowsSkipped: bRec.status === 'ok' ? bd.skipped : 0,
+        Warnings: bRec.warnings.join(' | '), Status: bRec.status
+      }));
+      if (bRec.status === 'ok') seenHash[hash] = name;
+      continue;
+    }
+
     if (kind !== 'credit') {
       report.files.push({ name: name, status: 'unsupported', message: 'סוג לא מזוהה — לא נקלט' });
       continue;
@@ -412,6 +479,7 @@ function ingestInbox_(opts) {
 
   if (!dry) {
     if (toWrite.length) eExp.sheet.getRange(eExp.sheet.getLastRow() + 1, 1, toWrite.length, eExp.headers.length).setValues(toWrite);
+    if (bankToWrite.length) eBank.sheet.getRange(eBank.sheet.getLastRow() + 1, 1, bankToWrite.length, eBank.headers.length).setValues(bankToWrite);
     if (impRows.length) eImp.sheet.getRange(eImp.sheet.getLastRow() + 1, 1, impRows.length, eImp.headers.length).setValues(impRows);
   }
   return report;
@@ -867,6 +935,10 @@ function ingestApiRead_(ss, r, params) {
   if (r === 'rules') {
     var sr = ss.getSheetByName(ING.rulesSheet);
     return { values: sr ? sr.getDataRange().getValues() : [RULE_COLS] };
+  }
+  if (r === 'bank') {
+    var sb = ss.getSheetByName('Bank');
+    return { values: sb ? sb.getDataRange().getValues() : [BANK_COLS] };
   }
   if (r === 'categories') {
     var sc = ss.getSheetByName('Categories');

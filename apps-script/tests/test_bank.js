@@ -88,7 +88,7 @@ ok('גיליון בלי כותרות מחזיר אזהרה',
    B.parseBankSheet_([['משהו'], ['אחר']]).warnings[0].indexOf('כותרות') > -1);
 
 /* ---------- מיון לדליים ---------- */
-const I = L.load('ingest.gs');
+const I = L.loadAll(['bankParser.gs', 'ingest.gs']);
 const B4 = I.BUCKETS_;
 
 const sug = p.rows.map(r => ({ r, s: I.suggestBankBucket_(r) }));
@@ -160,6 +160,45 @@ ok('מספרים בתיאור לא מפצלים פריט קבוע',
 /* עמודות הטאב */
 ok('Bank כולל את שדות המודל',
    ['Bucket','Freq','GoalId','SettlesCard','Tag'].every(c => I.BANK_COLS.indexOf(c) > -1));
+
+/* ---------- זיהוי סוג קובץ ---------- */
+ok('קובץ עו״ש מזוהה כ-bank', I.detectKind_(grid) === 'bank', I.detectKind_(grid));
+ok('קובץ אשראי עדיין מזוהה כ-credit',
+   I.detectKind_([['כרטיס:5519 - אמקס חודש החיוב: 02/09/2026'],
+                  ['עסקאות בשקלים חיוב בתאריך 02/09/2026']]) === 'credit');
+ok('קובץ זר מזוהה כ-unknown',
+   I.detectKind_([['רשימת מערכת שעות'], ['קורס', 'מרצה']]) === 'unknown');
+/* הבדיקה הזו היא הסיבה ש-loadAll קיים: detectKind_ ב-ingest.gs קורא
+   ל-isBankSheet_ ב-bankParser.gs. טעינה נפרדת הייתה מחזירה unknown
+   בשקט, והקובץ היה נדחה בייצור בלי שאיש ידע למה.                   */
+ok('detectKind_ באמת קורא לפרסר ולא לעותק משלו',
+   typeof I.detectKind_ === 'function' && I.detectKind_(grid) === 'bank');
+
+/* ---------- תלויות בין קבצים ----------
+   ingestInbox_ עצמו לא נבדק כאן: הוא נוגע ב-SpreadsheetApp ו-DriveApp.
+   מה שכן נבדק הוא שכל פונקציה שהענף החדש קורא לה באמת קיימת כשכל
+   הקבצים באותו סקופ — בדיוק כמו ב-Apps Script. פונקציה חסרה נופלת
+   בייצור באמצע קליטה, אחרי שכבר נכתבו שורות.                        */
+{
+  const fs2 = require('fs'), path2 = require('path');
+  const src = ['bankParser.gs', 'creditParser.gs', 'ingest.gs']
+    .map(n => fs2.readFileSync(path2.join(__dirname, '..', n), 'utf8')).join('\n;\n');
+  const probe = new Function('module', 'exports', src + `
+    ;return {
+      parseBankSheet_: typeof parseBankSheet_,
+      withBankOccurrence_: typeof withBankOccurrence_,
+      diffAgainstExisting_: typeof diffAgainstExisting_,
+      suggestBankBucket_: typeof suggestBankBucket_,
+      inferFreq_: typeof inferFreq_,
+      bankSheet_: typeof bankSheet_,
+      objToLine_: typeof objToLine_,
+      isBankSheet_: typeof isBankSheet_
+    };`)({ exports: {} }, {});
+  Object.keys(probe).forEach(k => {
+    const expected = (k === 'objToLine_') ? 'undefined' : 'function';
+    ok('תלות זמינה: ' + k, probe[k] === expected, probe[k]);
+  });
+}
 
 console.log('\nכיסוי המיון:');
 Object.keys(B4).map(k => B4[k]).forEach(b => {
