@@ -233,14 +233,78 @@ footer{border-top:1px solid var(--line); padding-top:20px; margin-top:20px; font
   <h1>מניהול תיקים למרכז בקרה פיננסי</h1>
   <p class="sub">אפיון מלא של מה שהאפליקציה צריכה להיות — פונקציונליות, תחקור הוצאות, קליטת נתונים, שפת עיצוב בסגנון iOS&nbsp;27, שכבת AI ותוכנית פיתוח מדורגת. נשען על קריאה של הקוד החי, בדיקה של האפליקציה בפועל, והשוואה מול CBA — אפליקציית ניהול הקהילה.</p>
   <div class="facts">
-    <span class="fact">2 בספטמבר 2026</span>
+    <span class="fact">אופיין 2 בספטמבר 2026</span>
+    <span class="fact">סטטוס עודכן 7 בספטמבר 2026</span>
     <span class="fact">ענף <code>main</code></span>
-    <span class="fact">קומיט <code>2f5c026</code></span>
-    <span class="fact">גיליון <code>StocksData</code> נקרא ישירות</span>
-    <span class="fact ok">כל ההחלטות סגורות</span>
-    <span class="fact hl">מוכן להפוך לקוד</span>
+    <span class="fact">קומיט <code>c21f592</code></span>
+    <span class="fact">Apps Script גרסה 18</span>
+    <span class="fact">חזית <code>?v=30</code></span>
+    <span class="fact ok">שלבים 0–4 נמסרו</span>
+    <span class="fact hl">שלב 5 הבא</span>
   </div>
 </header>
+
+<section class="dwrap" style="margin:26px 0 34px" id="status">
+  <h2 style="margin:0 0 6px">מצב ביצוע — 7 בספטמבר 2026</h2>
+  <p class="lead" style="margin-bottom:18px">האפיון נכתב ב-2.9 כתוכנית. הטבלה הזו היא <strong>מה שקרה בפועל</strong> מאז,
+  ומה שנותר. היא הדבר היחיד במסמך שמתעדכן; שאר הפרקים נשארים כפי שנכתבו, כדי
+  שאפשר יהיה לראות איפה המציאות סטתה מהתכנון.</p>
+
+  <table>
+    <thead><tr><th>שלב</th><th>מצב</th><th>מה נמסר בפועל</th></tr></thead>
+    <tbody>
+      <tr><td><strong>0</strong> ניקיון ותשתית</td>
+          <td><span class="pill ok">נמסר</span></td>
+          <td>קוד ה-Apps Script בריפו, <code>README</code> ו-<code>CLAUDE.md</code>, פריסה פעילה אחת.</td></tr>
+      <tr><td><strong>1</strong> אבטחה, רכיבים, עיצוב</td>
+          <td><span class="pill ok">נמסר</span></td>
+          <td>מושב חתום (<code>AUTH_REQUIRED</code> + <code>SESSION_EPOCH</code>), <code>ui.js</code> · <code>skel.js</code> · <code>money.js</code>,
+              שכבת הזכוכית וסולם הרדיוסים, ארבעת מצבי המסך.
+              <strong>סטייה מהאפיון:</strong> ״לחבר את <code>Commission</code> ו-<code>Fees</code>״ התברר כלא-נדרש —
+              <code>Commission</code> כבר נקרא כעמודה ב-<code>analytics.js</code> (768 תנועות, ‎$5,059‎),
+              ו-<code>Fees</code> ריקה לגמרי בגיליון (0 מתוך 1,660 שורות).</td></tr>
+      <tr><td><strong>2</strong> כתיבה ובסיס נתונים</td>
+          <td><span class="pill ok">נמסר חלקית</span></td>
+          <td><code>doPost</code> עם <code>withLock_</code> ו-<code>writeId</code> לניסיון חוזר בטוח, ישות חשבונות, <code>USD_ILS_History</code>.
+              <strong>נדחה:</strong> תור כתיבות אופליין, טאב <code>Symbols</code>, טאבי תזות/החלטות/שיטות.</td></tr>
+      <tr><td><strong>3</strong> מחקר ותחקור</td>
+          <td><span class="pill ok">נמסר</span></td>
+          <td>מסכי תחקור, ביצועים והשוואה. יומן מחקר לא נבנה כמסך נפרד.</td></tr>
+      <tr><td><strong>4</strong> קליטה, הוצאות ואשראי</td>
+          <td><span class="pill ok">נמסר</span></td>
+          <td>פרסרים לאשראי ולעו״ש, טאבי <code>Expenses</code> · <code>Bank</code> · <code>Categories</code> · <code>Rules</code>,
+              ארבע שכבות סיווג, עריכה אחורה ואיחוד קטגוריות, מסך תזרים,
+              <strong>תוכנית חודשית</strong> (טאב <code>Plan</code>) ו<strong>יעדי חיסכון</strong> (טאב <code>Goals</code>).
+              <strong>הרחבה מעבר לאפיון:</strong> מודל ארבעת הדליים ושדה התדירות — ר׳ למטה.</td></tr>
+      <tr><td><strong>5</strong> התחייבויות ושווי נקי</td>
+          <td><span class="pill">הבא בתור</span></td>
+          <td>הלוואות ולוח סילוקין, חסכונות ופנסיה, דמי ניהול עד הפרישה, מסך שווי נקי.
+              הנתונים כבר בגיליון: העו״ש מזהה החזרי הלוואה וריבית בדלי <code>הון</code>.</td></tr>
+      <tr><td><strong>6</strong> ליטוש והרחבה</td>
+          <td><span class="pill">לא התחיל</span></td>
+          <td>PWA, חיפוש גלובלי, מצב כהה, שכבת AI והתראות.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="call ok" style="margin-top:22px">
+    <span class="h">שתי הכרעות שנוספו אחרי האפיון וקובעות כל מספר במערכת</span>
+    <p style="margin:8px 0 0"><strong>1. מודל ארבעת הדליים.</strong> כל תנועה נופלת לאחד מ-
+    <code>הכנסה</code> · <code>צריכה</code> · <code>העברה</code> · <code>הון</code>, ו<strong>רק שני
+    הראשונים משנים את השווי נטו</strong>. סילוק אשראי הוא <code>העברה</code> ולכן הכסף נספר
+    פעם אחת בלבד — בפירוט האשראי, שם רואים על מה הוא הלך.</p>
+    <p style="margin:8px 0 0"><strong>2. תדירות כשדה נפרד</strong> (<code>קבוע</code> / <code>חד-פעמי</code>),
+    ולא כקטגוריה. זה הציר שמאפשר תחזית: הכנסה שאפשר לסמוך עליה נבדלת מהכנסה
+    שהגיעה פעם אחת.</p>
+  </div>
+
+  <div class="call" style="border-inline-start-color:var(--warn)">
+    <span class="h">מה חוסם את הדיוק היום</span>
+    <p style="margin:8px 0 0">נמדד חי על ארבעה חודשים: הכנסה קבועה מזוהה
+    <strong>₪30,875 לחודש</strong>, הוצאה מסווגת <strong>₪10,186</strong>, והוצאה
+    <strong>שעוד לא סווגה — ₪9,812 לחודש</strong>, כמעט מחצית. התוכנית, ״כמה נשאר״
+    וכל יעד מדויקים בדיוק כמו הסיווג הזה. מסך התוכנית אומר את זה מעצמו בפס אזהרה.</p>
+  </div>
+</section>
 
 <div class="shell">
 
