@@ -34,6 +34,12 @@ const NAV_STRUCTURE = [
         label: "תזרים",
         hint: "כמה נשאר",
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M14 8h6v6"/></svg>`
+      },
+      {
+        id: "goals",
+        label: "יעדים",
+        hint: "לאן זה הולך",
+        icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>`
       }
     ]
   },
@@ -90,6 +96,7 @@ const PAGE_TITLES = {
   dashboard:  { title: "לוח בקרה",        section: "ראשי" },
   expenses:   { title: "תנועות",          section: "משק הבית" },
   flow:       { title: "תזרים",           section: "משק הבית" },
+  goals:      { title: "יעדים",           section: "משק הבית" },
   portfolio:  { title: "תיקים",           section: "השקעות" },
   performance:{ title: "ביצועים",         section: "השקעות" },
   research:   { title: "תחקור",           section: "השקעות" },

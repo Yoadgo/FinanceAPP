@@ -425,6 +425,20 @@ const DataService = (() => {
     }
   }
 
+  /* יעדי החיסכון. אותו דפוס כישלון-בשקט כמו התוכנית. */
+  async function getGoals(force = false) {
+    const key = 'goals', now = Date.now(), TTL = 30 * 1000;
+    if (!force && _cache[key] && (now - _lastFetch[key]) < TTL) return _cache[key];
+    try {
+      const data = await _fetch({ resource: 'goals' });
+      _cache[key] = data; _lastFetch[key] = now;
+      return data;
+    } catch (e) {
+      if (e && e.unauthorized) throw e;
+      return { values: [] };
+    }
+  }
+
   /* רשימת הקטגוריות — מקור אמת יחיד לכל הבוררים במסך.
      **נכשל בשקט בכוונה:** שרת שעוד לא נפרס עם הטאב יחזיר שגיאה,
      והלקוח נופל לרשימת ברירת המחדל במקום להציג מסך שגיאה.             */
@@ -447,5 +461,5 @@ const DataService = (() => {
 
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
            getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData,
-           getExpenses, getBank, getCategories, getPlan, clearCache, login, post };
+           getExpenses, getBank, getCategories, getPlan, getGoals, clearCache, login, post };
 })();

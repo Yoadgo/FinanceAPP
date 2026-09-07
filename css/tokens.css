@@ -72,4 +72,5 @@ body[data-page="performance"],
 body[data-page="journal"]    { --dom: var(--dom-invest); --dom-lite: var(--dom-invest-lite); }
 body[data-page="cashflow"],
 body[data-page="expenses"]   { --dom: var(--dom-spend);  --dom-lite: var(--dom-spend-lite);  }
-body[data-page="savings"]    { --dom: var(--dom-save);   --dom-lite: var(--dom-save-lite);   }
+body[data-page="savings"],
+body[data-page="goals"]      { --dom: var(--dom-save);   --dom-lite: var(--dom-save-lite);   }

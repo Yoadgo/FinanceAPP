@@ -46,6 +46,10 @@ const BankEngine = (function () {
           sub: s(g(r, 'Subcategory')),
           freq: s(g(r, 'Freq')),
           tag: s(g(r, 'Tag')),
+          /* שיוך ליעד חיסכון. העמודה שמורה בטאב מהיום הראשון, אבל עד
+             שנבנו היעדים היא לא נקראה — ו-`GoalsEngine` קיבל undefined
+             מכל שורה, כלומר ״שום דבר לא משויך״, בשקט מוחלט.        */
+          goalId: s(g(r, 'GoalId')),
           settlesCard: s(g(r, 'SettlesCard')),
           settlesMonth: s(g(r, 'SettlesMonth')),
           status: s(g(r, 'Status')),
