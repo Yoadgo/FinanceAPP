@@ -1023,6 +1023,76 @@ function upsertRule_(ss, rule, cat, sub) {
   return id;
 }
 
+/* ====================== אישור שורות עו״ש ======================
+
+   מקביל ל-`approveExpenses_`, אבל על ציר אחר: באשראי ההחלטה היא
+   **קטגוריה** ("על מה"), בעו״ש היא קודם כול **דלי** ("האם זה בכלל
+   כסף שנעלם"). לכן הדלי הוא השדה היחיד שחובה, והשאר נכתבים רק
+   כשהלקוח שלח אותם במפורש — אותו לקח בדיוק כמו `Tag` באשראי:
+   מפתח חסר פירושו "אל תיגע", לא "מחק".                            */
+
+function bankApproveItems_(body) {
+  var out = [];
+  var items = (body && body.items) || [];
+  var valid = {};
+  Object.keys(BUCKETS_).forEach(function (k) { valid[BUCKETS_[k]] = true; });
+
+  items.forEach(function (it) {
+    var id = String(it && it.id != null ? it.id : '').trim();
+    if (!id) return;
+    var bucket = String(it && it.bucket || '').trim();
+    if (!bucket) throw new Error('חסר דלי לשורה ' + id);
+    if (!valid[bucket]) throw new Error('דלי לא מוכר: ' + bucket);
+
+    var has = function (k) { return Object.prototype.hasOwnProperty.call(it, k); };
+    out.push({
+      id: id, bucket: bucket,
+      category: String(it.category || '').trim(),      hasCategory: has('category'),
+      subcategory: String(it.subcategory || '').trim(), hasSub: has('subcategory'),
+      freq: String(it.freq || '').trim(),               hasFreq: has('freq'),
+      tag: String(it.tag || '').trim(),                 hasTag: has('tag')
+    });
+  });
+  return out;
+}
+
+function approveBank_(ss, body) {
+  var items = bankApproveItems_(body);
+  if (!items.length) throw new Error('לא נשלחו שורות לאישור');
+
+  var want = {};
+  items.forEach(function (it) { want[it.id] = it; });
+
+  var e = bankSheet_(ss), t = readTable_(e.sheet);
+  if (!t.rows.length) return { updated: 0, requested: items.length };
+
+  var iB = t.headers.indexOf('Bucket'), iC = t.headers.indexOf('Category');
+  var iS = t.headers.indexOf('Subcategory'), iF = t.headers.indexOf('Freq');
+  var iT = t.headers.indexOf('Tag'), iSt = t.headers.indexOf('Status');
+  var iU = t.headers.indexOf('UpdatedAt');
+
+  var first = t.rows[0]._row, last = t.rows[t.rows.length - 1]._row;
+  var block = e.sheet.getRange(first, 1, last - first + 1, t.headers.length);
+  var vals = block.getValues(), now = nowIso_(), n = 0;
+
+  t.rows.forEach(function (r) {
+    var it = want[String(r.Id)];
+    if (!it) return;
+    var i = r._row - first;
+    if (iB >= 0) vals[i][iB] = it.bucket;
+    if (iC >= 0 && it.hasCategory) vals[i][iC] = it.category;
+    if (iS >= 0 && it.hasSub)      vals[i][iS] = it.subcategory;
+    if (iF >= 0 && it.hasFreq)     vals[i][iF] = it.freq;
+    if (iT >= 0 && it.hasTag)      vals[i][iT] = it.tag;
+    if (iSt >= 0) vals[i][iSt] = 'ok';
+    if (iU >= 0) vals[i][iU] = now;
+    n++;
+  });
+  if (n) block.setValues(vals);
+
+  return { updated: n, requested: items.length };
+}
+
 /* ====================== נקודות קצה ====================== */
 
 function ingestApiRead_(ss, r, params) {
@@ -1055,6 +1125,7 @@ function ingestApiWrite_(ss, action, body) {
   if (action === 'expenses.approve')      return approveExpenses_(ss, body);
   if (action === 'categories.upsert')     return upsertCategory_(ss, body);
   if (action === 'categories.rename')     return renameCategory_(ss, body);
+  if (action === 'bank.approve')          return approveBank_(ss, body);
   if (action === 'expenses.classify')     return classifyMerchant_(ss, body);
   if (action === 'expenses.recategorize') return recategorize_(ss, { onlyPending: !body.all });
   if (action === 'ingest.run')            return ingestInbox_({ dryRun: !!body.dryRun });
@@ -1064,6 +1135,7 @@ function ingestApiWrite_(ss, action, body) {
 if (typeof module !== 'undefined') module.exports = {
   approveItems_: approveItems_, EXPENSE_COLS: EXPENSE_COLS,
   renamePlan_: renamePlan_, CATEGORY_COLS: CATEGORY_COLS,
+  bankApproveItems_: bankApproveItems_,
   suggestBankBucket_: suggestBankBucket_, SEED_BANK_RULES_: SEED_BANK_RULES_,
   BUCKETS_: BUCKETS_, BANK_COLS: BANK_COLS, inferFreq_: inferFreq_,
   normMerchant_: normMerchant_, suggestCategory_: suggestCategory_,

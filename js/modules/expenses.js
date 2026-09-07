@@ -313,12 +313,28 @@ const ExpensesEngine = (function () {
       if (ymd) return ymd[2] + '/' + ymd[1];
       var il = d.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})$/);   // 02/07/2026 — פלט הפרסר
       if (il) return ('0' + il[2]).slice(-2) + '/' + il[3];
-      /* ISO עם שעה ('2026-09-01T21:00:00.000Z') הוא Date שהגיליון סידר,
-         והוא כבר מוסט ל-UTC. כאן דווקא **חייבים** את האזור המקומי —
-         21:00 ב-1 בספטמבר UTC הוא ה-2 בספטמבר בישראל.               */
+      /* ISO עם שעה ('2026-09-01T21:00:00.000Z') הוא Date שהגיליון סידר:
+         חצות בישראל, שנשמר כ-UTC. חייבים לקרוא אותו **בשעון ישראל**
+         ולא ב-UTC — 21:00 ב-1 בספטמבר UTC הוא ה-2 בספטמבר בישראל.  */
     }
     var x = (d instanceof Date) ? d : new Date(d);
     if (isNaN(x.getTime())) return '—';
+    return ilYM_(x);
+  }
+
+  /* ⛔ **לא** `getMonth()` המקומי. הוא נותן את התשובה הנכונה רק אם
+     הדפדפן במקרה בישראל — כלומר אותו קובץ נתונים היה מציג חודשים
+     שונים ליועד ולבדיקה שרצה ב-UTC, בשקט ובלי שגיאה. אזור הזמן של
+     **הנתונים** קבוע, ולכן הוא נכתב במפורש.                        */
+  var IL_FMT = null;
+  function ilYM_(x) {
+    try {
+      if (!IL_FMT) IL_FMT = new Intl.DateTimeFormat('en-GB',
+        { timeZone: 'Asia/Jerusalem', year: 'numeric', month: '2-digit' });
+      var p = {};
+      IL_FMT.formatToParts(x).forEach(function (o) { p[o.type] = o.value; });
+      if (p.month && p.year) return p.month + '/' + p.year;
+    } catch (e) { /* סביבה בלי Intl — נפילה חיננית לאזור המקומי */ }
     return ('0' + (x.getMonth() + 1)).slice(-2) + '/' + x.getFullYear();
   }
   function round2(v) { return Math.round(v * 100) / 100; }

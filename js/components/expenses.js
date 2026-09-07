@@ -128,21 +128,33 @@ Pages.expenses = (() => {
     if (!_container) return;
     const s = ExpensesEngine.summarize(_rows, { basis: _basis, washPairs: _wash });
     const decisions = _groups.length + _singles.length;
+    /* מונה העו״ש מופיע רק אחרי שהטאב נטען פעם אחת. לא שולחים בקשה
+       לשרת רק כדי לצייר תג על טאב שאולי לא ייפתח היום.            */
+    const bp = (typeof BankView !== 'undefined' && BankView.pendingCount) ? BankView.pendingCount() : 0;
     _container.innerHTML = `
       <div class="ex">
         <div class="ex-head">
           <div>
-            <div class="ex-sub">${_rows.length} שורות אשראי · ${s.byMonth.length} חודשי חיוב · ${money(s.total)}</div>
+            <div class="ex-sub">${_tab === 'bank'
+              ? 'עובר ושב — כל תנועה מקבלת דלי אחד'
+              : `${_rows.length} שורות אשראי · ${s.byMonth.length} חודשי חיוב · ${money(s.total)}`}</div>
           </div>
           <div class="ex-tabs">
             <button class="ex-tab${_tab==='sort'?' on':''}" data-tab="sort">לסיווג${decisions?` <i>${decisions}</i>`:''}</button>
             <button class="ex-tab${_tab==='spend'?' on':''}" data-tab="spend">על מה הוצאנו</button>
+            <button class="ex-tab${_tab==='bank'?' on':''}" data-tab="bank">עו״ש${bp?` <i>${bp}</i>`:''}</button>
           </div>
         </div>
-        ${_tab === 'sort' ? _paintSort(s) : _paintSpend(s)}
+        ${_tab === 'bank' ? '<div class="ex-bank-host"></div>'
+          : _tab === 'sort' ? _paintSort(s) : _paintSpend(s)}
       </div>${_tagList()}`;
     _wire();
     _restore(keep);
+    /* העו״ש הוא רכיב עצמאי עם המצב שלו. המסך הזה רק נותן לו מקום. */
+    if (_tab === 'bank') {
+      const host = _container.querySelector('.ex-bank-host');
+      if (host && typeof BankView !== 'undefined') BankView.render(host);
+    }
   }
 
   function _paintSort(s) {
@@ -883,5 +895,9 @@ Pages.expenses = (() => {
 
   function reload() { if (_container) render(_container); }
 
-  return { render, reload };
+  /* פירוט האשראי, לשימוש מסך העו״ש בקיזוז מול שורות הסילוק. חשיפה
+     של קריאה בלבד — הקיזוז לא נוגע בנתונים, רק מציג התלכדות.      */
+  function rows() { return _rows || []; }
+
+  return { render, reload, rows };
 })();

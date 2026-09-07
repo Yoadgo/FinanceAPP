@@ -398,6 +398,17 @@ const DataService = (() => {
     return data;
   }
 
+  /* תנועות העו״ש. אותו TTL קצר כמו ההוצאות: המסך נפתח, מסווגים כמה
+     שורות, וכל אישור מעדכן את המצב המקומי ומצייר מחדש — מטמון ארוך
+     היה מחזיר את השורה המסווגת למצב ״בהמתנה״ בטעינה הבאה.          */
+  async function getBank(force = false) {
+    const key = 'bank', now = Date.now(), TTL = 30 * 1000;
+    if (!force && _cache[key] && (now - _lastFetch[key]) < TTL) return _cache[key];
+    const data = await _fetch({ resource: 'bank' });
+    _cache[key] = data; _lastFetch[key] = now;
+    return data;
+  }
+
   /* רשימת הקטגוריות — מקור אמת יחיד לכל הבוררים במסך.
      **נכשל בשקט בכוונה:** שרת שעוד לא נפרס עם הטאב יחזיר שגיאה,
      והלקוח נופל לרשימת ברירת המחדל במקום להציג מסך שגיאה.             */
@@ -420,5 +431,5 @@ const DataService = (() => {
 
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
            getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData,
-           getExpenses, getCategories, clearCache, login, post };
+           getExpenses, getBank, getCategories, clearCache, login, post };
 })();

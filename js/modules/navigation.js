@@ -46,7 +46,7 @@ const NAV_STRUCTURE = [
     items: [
       {
         id: "expenses",
-        label: "הוצאות",
+        label: "תנועות",
         icon: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10h18"/><path d="M7 15h4"/></svg>`
       },
       {
@@ -66,6 +66,6 @@ const PAGE_TITLES = {
   performance:{ title: "ביצועים",           section: "השקעות וחסכונות" },
   research:   { title: "תחקור",             section: "השקעות וחסכונות" },
   journal:    { title: "יומן תנועות",        section: "השקעות וחסכונות" },
-  expenses:   { title: "הוצאות",            section: "ניהול תזרים" },
+  expenses:   { title: "תנועות",            section: "ניהול תזרים" },
   cashflow:   { title: "הכנסות והוצאות",   section: "ניהול תזרים" },
 };
