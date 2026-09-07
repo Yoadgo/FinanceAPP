@@ -1096,6 +1096,10 @@ function approveBank_(ss, body) {
 /* ====================== נקודות קצה ====================== */
 
 function ingestApiRead_(ss, r, params) {
+  /* התוכנית חיה בקובץ נפרד. בדיקת typeof מאפשרת לקליטה לעבוד גם
+     בפרויקט שעוד לא נפרס איתו — אותו דפוס כמו החיבור מ-Code.gs. */
+  if (typeof planApiRead_ === 'function') { var _p = planApiRead_(ss, r); if (_p) return _p; }
+
   if (r === 'expenses') {
     var sh = ss.getSheetByName(ING.expensesSheet);
     if (!sh) return { values: [EXPENSE_COLS] };
@@ -1122,6 +1126,8 @@ function ingestApiRead_(ss, r, params) {
 }
 
 function ingestApiWrite_(ss, action, body) {
+  if (typeof planApiWrite_ === 'function') { var _p = planApiWrite_(ss, action, body); if (_p) return _p; }
+
   if (action === 'expenses.approve')      return approveExpenses_(ss, body);
   if (action === 'categories.upsert')     return upsertCategory_(ss, body);
   if (action === 'categories.rename')     return renameCategory_(ss, body);

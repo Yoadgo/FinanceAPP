@@ -7,11 +7,15 @@
 
    ⚠️ **זו מדידת תזרים ולא מאזן.** ״כמה הפרשנו״ (מהעו״ש) ו״כמה יש״
    (מהתיקים) הן שתי מדידות שונות של אותו חיסכון, ו**אסור לחבר
-   אותן** — ההעברה לאיביאי הייתה נספרת גם כאן וגם כגידול בתיק.  */
+   אותן** — ההעברה לאיביאי הייתה נספרת גם כאן וגם כגידול בתיק.
+
+   התוכנית יושבת כאן כטאב שני ולא כפריט ניווט: ״כמה תכננו״ בלי
+   ״כמה יצא בפועל״ לידו מכריח לזכור מספר ולהשוות בראש.          */
 
 Pages.flow = (() => {
 
   let _container = null, _bank = null, _credit = null, _wash = null, _open = {};
+  let _tab = 'actual';
 
   /* מימוש אחד ב-`js/ui/money.js`. הכינוי המקומי נשאר כדי שאתרי הקריאה
      יישארו קצרים — מה שהיה כפול הוא הפורמט, לא השם. */
@@ -21,7 +25,7 @@ Pages.flow = (() => {
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
   function render(container) {
-    _container = container; _open = {};
+    _container = container; _open = {}; _tab = 'actual';
     container.innerHTML = FA.skel ? FA.skel.tablePage(6, 3) : '<div class="ex-load">טוען…</div>';
     _load();
   }
@@ -60,14 +64,28 @@ Pages.flow = (() => {
     }
 
     _container.innerHTML = `<div class="fl">
-      ${_kpis(s)}
-      ${s.unknownCount ? _warn(s) : ''}
-      ${_monthsPanel(m, s)}
-      ${_avgPanel(s)}
-      ${_catsPanel()}
-      <div class="ex-note fl-foot">זו מדידת <b>תזרים</b>: כמה הפרשנו בפועל מהחשבון. ״כמה <b>יש</b>״ נמדד במסך התיקים, והוא מספר אחר — <b>אסור לחבר את השניים</b>, כי ההעברה לחיסכון תיספר גם כאן וגם כגידול בתיק.</div>
+      <div class="ex-head fl-head">
+        <div class="ex-tabs">
+          <button class="ex-tab${_tab==='actual'?' on':''}" data-ftab="actual">בפועל</button>
+          <button class="ex-tab${_tab==='plan'?' on':''}" data-ftab="plan">תוכנית</button>
+        </div>
+      </div>
+      ${_tab === 'plan' ? '<div class="fl-plan-host"></div>' : `
+        ${_kpis(s)}
+        ${s.unknownCount ? _warn(s) : ''}
+        ${_monthsPanel(m, s)}
+        ${_avgPanel(s)}
+        ${_catsPanel()}
+        <div class="ex-note fl-foot">זו מדידת <b>תזרים</b>: כמה הפרשנו בפועל מהחשבון. ״כמה <b>יש</b>״ נמדד במסך התיקים, והוא מספר אחר — <b>אסור לחבר את השניים</b>, כי ההעברה לחיסכון תיספר גם כאן וגם כגידול בתיק.</div>`}
     </div>`;
     _wire();
+
+    if (_tab === 'plan') {
+      const host = _container.querySelector('.fl-plan-host');
+      if (host && typeof Pages !== 'undefined' && Pages.plan) {
+        Pages.plan.render(host, { bank: _bank, credit: _credit, wash: _wash });
+      }
+    }
   }
 
   function _kpis(s) {
@@ -165,6 +183,9 @@ Pages.flow = (() => {
   }
 
   function _wire() {
+    _container.querySelectorAll('[data-ftab]').forEach(b =>
+      b.onclick = () => { _tab = b.dataset.ftab; _paint(); });
+
     _container.querySelectorAll('.fl-m').forEach(box => {
       const d = box.querySelector('.fl-m-c'), m = box.dataset.m;
       box.querySelector('.fl-m-h').onclick = () => {

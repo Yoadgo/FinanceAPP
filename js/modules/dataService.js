@@ -409,6 +409,22 @@ const DataService = (() => {
     return data;
   }
 
+  /* התוכנית החודשית. **נכשל בשקט בכוונה**, כמו הקטגוריות: שרת שעוד
+     לא נפרס עם טאב `Plan` יחזיר שגיאה, והמסך צריך להיפתח על ההצעה
+     ולא על שגיאה. TTL קצר — אחרי שמירה הנתון חייב להתרענן.        */
+  async function getPlan(force = false) {
+    const key = 'plan', now = Date.now(), TTL = 30 * 1000;
+    if (!force && _cache[key] && (now - _lastFetch[key]) < TTL) return _cache[key];
+    try {
+      const data = await _fetch({ resource: 'plan' });
+      _cache[key] = data; _lastFetch[key] = now;
+      return data;
+    } catch (e) {
+      if (e && e.unauthorized) throw e;
+      return { values: [] };
+    }
+  }
+
   /* רשימת הקטגוריות — מקור אמת יחיד לכל הבוררים במסך.
      **נכשל בשקט בכוונה:** שרת שעוד לא נפרס עם הטאב יחזיר שגיאה,
      והלקוח נופל לרשימת ברירת המחדל במקום להציג מסך שגיאה.             */
@@ -431,5 +447,5 @@ const DataService = (() => {
 
   return { getHealth, getTransactions, getStockHistory, getStockHistories,
            getHistoryCacheInfo, getFxRate, getFxHistory, getRealTimeData,
-           getExpenses, getBank, getCategories, clearCache, login, post };
+           getExpenses, getBank, getCategories, getPlan, clearCache, login, post };
 })();
