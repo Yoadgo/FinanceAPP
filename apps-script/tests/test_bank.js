@@ -87,6 +87,90 @@ ok('קובץ ריק לא מפיל', B.parseBankSheet_([]).warnings.length === 1)
 ok('גיליון בלי כותרות מחזיר אזהרה',
    B.parseBankSheet_([['משהו'], ['אחר']]).warnings[0].indexOf('כותרות') > -1);
 
+/* ---------- מיון לדליים ---------- */
+const I = L.load('ingest.gs');
+const B4 = I.BUCKETS_;
+
+const sug = p.rows.map(r => ({ r, s: I.suggestBankBucket_(r) }));
+const hit = sug.filter(x => x.s.hit);
+const miss = sug.filter(x => !x.s.hit);
+
+ok('רוב השורות קיבלו הצעה', hit.length >= 70, hit.length + '/' + p.rows.length);
+ok('כל הצעה נושאת דלי מוכר',
+   hit.every(x => Object.keys(B4).map(k => B4[k]).indexOf(x.s.bucket) > -1));
+ok('שורה בלי כלל נשארת בלי דלי',
+   miss.every(x => x.s.bucket === '' && x.s.why === 'אין כלל מתאים'));
+
+const sum  = f => sug.filter(f).reduce((a, x) => a + Math.abs(x.r.amount), 0);
+const net  = f => sug.filter(f).reduce((a, x) => a + x.r.amount, 0);   // חתום
+
+/* שלושת המספרים מהמודל — אם המיון יזוז, הם ייפלו */
+ok('סילוק אשראי = 74,996',
+   Math.abs(sum(x => x.s.category === 'סילוק אשראי') - 74996) < 1,
+   sum(x => x.s.category === 'סילוק אשראי').toFixed(0));
+ok('משכורות = 87,913',
+   Math.abs(sum(x => x.s.category === 'משכורת') - 87913) < 1,
+   sum(x => x.s.category === 'משכורת').toFixed(0));
+ok('הלוואות שהתקבלו = 100,000',
+   Math.abs(sum(x => x.s.category === 'הלוואה שהתקבלה') - 100000) < 1);
+
+/* מספר הכרטיס נשלף לצורך הקישור לפירוט */
+const settle = sug.filter(x => x.s.settlesCard);
+ok('9 שורות סילוק עם מספר כרטיס', settle.length === 9, settle.length);
+ok('רק 5519 / 5701 / 7487',
+   settle.every(x => ['5519','5701','7487'].indexOf(x.s.settlesCard) > -1),
+   [...new Set(settle.map(x => x.s.settlesCard))].join());
+
+/* התשובות של יועד, נעולות בקוד */
+const bitMe = sug.filter(x => /מיועד גולן|מפייבוקס/.test(x.r.desc));
+ok('ביט מעצמי ופייבוקס = העברה ולא הכנסה',
+   bitMe.length > 0 && bitMe.every(x => x.s.bucket === B4.move), bitMe.length);
+const halp = sug.filter(x => x.r.desc.indexOf('הלפרין') > -1);
+ok('הלפרין = הכנסה', halp.length === 3 && halp.every(x => x.s.bucket === B4.income));
+const shikun = sug.filter(x => x.r.desc.indexOf('שיכוני חי') > -1);
+ok('שיכוני חי = צריכה · דיור · קבוע',
+   shikun.length === 3 && shikun.every(x =>
+     x.s.bucket === B4.spend && x.s.category === 'דיור' && x.s.freq === 'קבוע'));
+
+/* ⛔ הבית לא מקבל דלי אוטומטי — ניחוש כאן הופך ₪216,554 להוצאה */
+const house2 = sug.filter(x => x.r.desc.indexOf('העברה מהחשבון') === 0);
+ok('חמש העברות הבית נשארות בלי דלי',
+   house2.length === 5 && house2.every(x => x.s.hit === false));
+
+/* צריכה אוטומטית — רק מה שבטוח */
+/* צריכה נטו: שיכוני חי 2,322 + כאל 388, פחות זיכוי ישראכרט 135 */
+ok('צריכה נטו = 2,575', Math.abs(net(x => x.s.bucket === B4.spend) + 2575) < 2,
+   net(x => x.s.bucket === B4.spend).toFixed(0));
+ok('הזיכוי מישראכרט נכנס לצריכה עם סימן חיובי', (() => {
+  const t = sug.find(x => x.r.desc.indexOf('תיקונים') === 0);
+  return t && t.s.bucket === B4.spend && t.s.category === 'זיכוי אשראי' && t.r.amount === 135;
+})());
+ok('הזיכוי אינו מסלק חודש חיוב',
+   sug.find(x => x.r.desc.indexOf('תיקונים') === 0).s.settlesCard === '');
+
+/* תדירות */
+const freq = I.inferFreq_(p.rows);
+ok('משכורת מזוהה כקבועה', freq['מופ"ת קבע'] === 'קבוע', freq['מופ"ת קבע']);
+ok('שיכוני חי מזוהה כקבוע', freq['עמותת שיכוני חי'] === 'קבוע');
+ok('הלוואה שהתקבלה מזוהה כחד-פעמית',
+   freq['הלוואה - תשלום קרן #'] === 'חד-פעמי', freq['הלוואה - תשלום קרן #']);
+ok('מספרים בתיאור לא מפצלים פריט קבוע',
+   Object.keys(freq).some(k => k.indexOf('#') > -1));
+
+/* עמודות הטאב */
+ok('Bank כולל את שדות המודל',
+   ['Bucket','Freq','GoalId','SettlesCard','Tag'].every(c => I.BANK_COLS.indexOf(c) > -1));
+
+console.log('\nכיסוי המיון:');
+Object.keys(B4).map(k => B4[k]).forEach(b => {
+  const n = sug.filter(x => x.s.bucket === b).length;
+  if (n) console.log('  ' + b.padEnd(8) + String(n).padStart(3) + ' שורות · ₪' +
+    sum(x => x.s.bucket === b).toLocaleString('he-IL', {maximumFractionDigits:0}));
+});
+console.log('  ' + 'ללא'.padEnd(8) + String(miss.length).padStart(3) + ' שורות · ₪' +
+  sum(x => !x.s.hit).toLocaleString('he-IL', {maximumFractionDigits:0}));
+console.log('  ' + miss.map(x => x.r.desc).filter((v,i,a) => a.indexOf(v)===i).join(' · '));
+
 console.log('\nסיכום הקובץ האמיתי:');
 console.log('  %d תנועות · %s → %s · חשבון %s', p.rows.length, p.meta.from, p.meta.to, p.meta.account);
 console.log('  יצא ₪%s · נכנס ₪%s', debit.toLocaleString('he-IL', {maximumFractionDigits:0}),
