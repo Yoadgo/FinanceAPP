@@ -1,375 +1,138 @@
-/* ===== FINANCEAPP — Main Controller ===== */
+/* ================================================================
+   APP — נקודת הכניסה. שלושה תפקידים בלבד:
+     1. לבדוק שיש הגדרה, ולהריץ את שער הכניסה.
+     2. לצייר את השלד: סרגל עליון, סרגל תחתון (מובייל), אזור תוכן.
+     3. לנתב: כתובת ← עולם ← תת-מסך ← טעינת קובץ המסך.
+   אין כאן לוגיקה של כסף ואין כאן גישה לנתונים.
 
-/* ── Bottom nav items (mobile) ── */
-const BOTTOM_NAV_ITEMS = [
-  {
-    id: 'dashboard', label: 'בקרה',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>`
-  },
-  {
-    id: 'portfolio', label: 'תיקים',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>`
-  },
-  {
-    id: 'journal', label: 'יומן',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`
-  },
-  {
-    id: 'flow', label: 'תזרים',
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>`
+   חוזה של קובץ מסך: export async function render(el, ctx)
+     el  — הקונטיינר שהמסך מצייר לתוכו
+     ctx — { world, sub, go(worldId, subId) }
+   ================================================================ */
+import { isConfigured } from './config.js';
+import { h, mount } from './ui/dom.js';
+import { WORLDS, parseHash, hrefOf, STAGE_NAMES } from './core/routes.js';
+import { emptyState, errorState, loading } from './ui/components.js';
+import * as gate from './ui/gate.js';
+
+const root = document.getElementById('root');
+
+async function boot() {
+  if (!isConfigured()) { gate.renderSetupNeeded(root); return; }
+  let auth;
+  try {
+    auth = await import('./core/auth.js');
+  } catch (e) {
+    /* ה-SDK של גוגל לא נטען (רשת, חוסם פרסומות). אומרים את זה, לא מסך לבן. */
+    gate.renderGateError(root, new Error('לא ניתן לטעון את Firebase. בדוק חיבור לאינטרנט או חוסם תוכן, ורענן.'), () => location.reload());
+    return;
   }
-];
+  auth.watchAuth(({ state, user, error }) => {
+    if (state === 'signed-out') gate.renderSignIn(root, auth.signIn);
+    else if (state === 'not-member') gate.renderNotMember(root, user, auth.signOutNow);
+    else if (state === 'no-household') gate.renderNoHousehold(root, user, auth.signOutNow);
+    else if (state === 'error') gate.renderGateError(root, error, () => location.reload());
+    else if (state === 'member') startShell(user, auth.signOutNow);
+  });
+}
 
-const App = (() => {
+/* ── השלד ── */
+let viewEl = null, navEls = [];
 
-  /* State */
-  let currentPage = "dashboard";
-  let sidebarCollapsed = false;
-  let mobileSidebarOpen = false;
-  let dataStatus = "idle"; // idle | loading | live | error
-  let _lastErrorMsg = null;
-  let _progressTimer = null;
-  let _fxRateValue  = null;
-  let _globalCurrency = 'USD';
+function startShell(user, onSignOut) {
+  const worldLinks = WORLDS.map(w => h('a', { href: hrefOf(w.id), dataset: { world: w.id } }, h('span', { class: `wdot ${w.dot}` }), w.label));
+  const tabLinks = WORLDS.map(w => h('a', { href: hrefOf(w.id), dataset: { world: w.id } }, h('span', { class: `wdot ${w.dot}` }), w.short));
+  navEls = [...worldLinks, ...tabLinks];
 
-  /* ---- INIT ---- */
-  function init() {
-    renderSidebar();
-    renderTopbar();
-    renderBottomNav();
-    // אם כבר ידוע מביקור קודם שנדרשת כניסה ואין מושב — לעלות עם השער ולא
-    // לשלוח בקשה שממילא תיכשל.
-    if (window.FA && FA.session && FA.session.needsAuth() && !FA.session.get()) {
-      FA.session.open(refreshData);
-    }
-    renderContent(currentPage);
-    bindGlobalEvents();
+  const avatar = user.photo ? h('img', { src: user.photo, alt: '', referrerpolicy: 'no-referrer' }) : null;
+  const userChip = h('div', { class: 'userchip' }, avatar, h('span', { class: 'name' }, user.name),
+    h('button', { class: 'btn sm ghost', onclick: onSignOut }, 'יציאה'));
+
+  const ticker = h('div', { class: 'ticker', 'aria-label': 'מדדים ומחירים' }, h('span', { class: 'tick note' }, 'טוען מחירים…'));
+  viewEl = h('main', { class: 'view', id: 'view', tabindex: '-1' });
+  mount(root, h('div', { class: 'app' },
+    h('header', { class: 'topbar' },
+      h('div', { class: 'row1' },
+        h('a', { class: 'brand', href: '#/home' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }), 'FinanceAPP'),
+        h('nav', { class: 'worldnav', 'aria-label': 'עולמות' }, worldLinks),
+        userChip),
+      ticker),
+    viewEl,
+    h('nav', { class: 'tabbar', 'aria-label': 'עולמות' }, tabLinks)));
+  fillTicker(ticker);
+
+  window.removeEventListener('hashchange', route);
+  window.addEventListener('hashchange', route);
+  route();
+}
+
+/* ── ניתוב ── */
+let routeSeq = 0;
+
+async function route() {
+  const seq = ++routeSeq;
+  const { world, sub } = parseHash(location.hash);
+  navEls.forEach(a => { if (a.dataset.world === world.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+
+  const ctx = { world, sub, go: (w, s) => { location.hash = hrefOf(w, s); } };
+
+  let target;
+  if (world.subs) {
+    const rail = h('nav', { class: 'subrail', 'aria-label': world.label },
+      h('div', { class: 'eyebrow' }, world.label),
+      world.subs.map(s => h('a', { href: hrefOf(world.id, s.id), 'aria-current': s.id === sub.id ? 'page' : null },
+        h('span', null, s.label), s.load ? null : h('span', { class: 'soon' }, `שלב ${s.stage}`))));
+    target = h('div', { class: 'world-body' });
+    mount(viewEl, h('div', { class: 'world' }, rail, target));
+  } else {
+    target = h('div', { class: 'world-body' });
+    mount(viewEl, target);
   }
+  mount(target, loading('card'));
 
-  /* ---- SIDEBAR ---- */
-  function renderSidebar() {
-    const sidebar = document.getElementById("sidebar");
-
-    const logoHTML = `
-      <div class="sidebar-logo">
-        <div class="logo-icon">
-          <img src="assets/logo.png" alt="לוגו" />
-        </div>
-        <div>
-          <div class="logo-text">FinanceAPP</div>
-          <div class="logo-sub">ניהול פיננסי</div>
-        </div>
-      </div>`;
-
-    let navHTML = `<nav class="sidebar-nav">`;
-    NAV_STRUCTURE.forEach(group => {
-      navHTML += `<div class="nav-section-label">${group.section}</div>`;
-      group.items.forEach(item => {
-        const isActive = item.id === currentPage ? "active" : "";
-        navHTML += `
-          <div class="nav-item ${isActive}" data-page="${item.id}">
-            <span class="nav-icon">${item.icon}</span>
-            <span class="nav-label">
-              <b>${item.label}</b>${item.hint ? `<small>${item.hint}</small>` : ""}
-            </span>
-          </div>`;
-      });
-    });
-    navHTML += `</nav>`;
-
-    const toggleHTML = `
-      <div class="sidebar-toggle" id="sidebar-toggle-btn" title="כווץ תפריט">
-        <svg id="toggle-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </div>`;
-
-    sidebar.innerHTML = logoHTML + navHTML + toggleHTML;
-
-    sidebar.querySelectorAll(".nav-item").forEach(el => {
-      el.addEventListener("click", () => navigateTo(el.dataset.page));
-    });
-
-    document.getElementById("sidebar-toggle-btn").addEventListener("click", toggleSidebar);
+  const screen = world.subs ? sub : world;
+  if (!screen.load) { if (seq === routeSeq) mount(target, planned(world, sub)); return; }
+  try {
+    const mod = await screen.load();
+    if (seq !== routeSeq) return;             // המשתמש כבר עבר למסך אחר
+    target.replaceChildren();
+    await mod.render(target, ctx);
+  } catch (e) {
+    console.error(e);
+    if (seq === routeSeq) mount(target, errorState({ title: 'המסך לא נטען', error: e, onRetry: route }));
   }
+}
 
-  /* ---- TOPBAR ---- */
-  function renderTopbar() {
-    const topbar = document.getElementById("topbar");
-    const meta = PAGE_TITLES[currentPage] || { title: "", section: "" };
-
-    topbar.innerHTML = `
-      <!-- Mobile hamburger -->
-      <button class="icon-btn" id="mobile-menu-btn" style="display:none">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </button>
-
-      <!-- Breadcrumb -->
-      <div class="topbar-breadcrumb">
-        <span>${meta.section}</span>
-        <span class="separator">›</span>
-        <span class="page-title">${meta.title}</span>
-      </div>
-
-      <!-- Actions -->
-      <div class="topbar-actions">
-        <!-- Currency toggle (USD ⇔ ILS) -->
-        <div class="topbar-curr-toggle" id="topbar-curr-toggle">
-          <button class="topbar-curr-btn${_globalCurrency === 'USD' ? ' active' : ''}" data-curr="USD">$ USD</button>
-          <button class="topbar-curr-btn${_globalCurrency === 'ILS' ? ' active' : ''}" data-curr="ILS">₪ ILS</button>
-        </div>
-
-        <div class="topbar-fx" id="topbar-fx" style="display:none">
-          <span class="topbar-fx-label">USD/ILS</span>
-          <span id="topbar-fx-val">—</span>
-        </div>
-
-        <div class="status-pill" id="data-status-pill">
-          <span class="status-dot" id="status-dot"></span>
-          <span id="status-text">ממתין לנתונים</span>
-        </div>
-
-        <button class="icon-btn" id="refresh-btn" title="רענן נתונים">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-        </button>
-
-        <div class="avatar" title="פרופיל">י</div>
-      </div>`;
-
-    // Show hamburger on mobile
-    const mobileBtn = document.getElementById("mobile-menu-btn");
-    if (window.innerWidth <= 768) mobileBtn.style.display = "flex";
-
-    mobileBtn?.addEventListener("click", toggleMobileSidebar);
-    document.getElementById("refresh-btn")?.addEventListener("click", refreshData);
-
-    // Currency toggle
-    document.querySelectorAll(".topbar-curr-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        if (btn.dataset.curr === _globalCurrency) return;
-        _globalCurrency = btn.dataset.curr;
-        document.querySelectorAll(".topbar-curr-btn").forEach(b =>
-          b.classList.toggle("active", b.dataset.curr === _globalCurrency)
-        );
-        document.dispatchEvent(new CustomEvent("app:currencychange", { detail: _globalCurrency }));
-      });
-    });
-
-    // Restore FX rate if already known
-    if (_fxRateValue) _applyFxRate(_fxRateValue);
+/* שורת המדדים: המדד, הנאסד"ק, הדולר, ואז האחזקות. המחיר והשינוי היומי
+   מגיליון המחירים; בלי גיליון — אומרים את זה, לא מציגים מספרים ריקים. */
+const TICKER_FIRST = ['IVV', 'QQQ'];
+async function fillTicker(el) {
+  try {
+    const { latest } = await import('./core/market.js');
+    const { data } = await latest();
+    if (!data || !data.prices) { mount(el, h('span', { class: 'tick note' }, 'מחירי שוק עוד לא מחוברים · גיליון המחירים ייפרס בשלב 3')); return; }
+    const syms = [...TICKER_FIRST.filter(s => data.prices[s]), ...Object.keys(data.prices).filter(s => !TICKER_FIRST.includes(s)).sort()];
+    const tick = (sym, px, ch, digits = 2) => h('span', { class: 'tick' },
+      h('span', { class: 'sym' }, sym),
+      h('span', { class: 'px', dir: 'ltr' }, px.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })),
+      ch === null ? null : h('span', { class: `ch ${ch > 0 ? 'up' : ch < 0 ? 'down' : ''}`, dir: 'ltr' }, `${ch > 0 ? '▲' : ch < 0 ? '▼' : ''} ${Math.abs(ch).toFixed(2)}%`));
+    const items = syms.slice(0, 2).map(s => tick(s, data.prices[s].price, data.prices[s].changePct));
+    if (data.fx && data.fx.USDILS) items.push(tick('USD/ILS', data.fx.USDILS.rate, null, 3));
+    syms.slice(2).forEach(s => items.push(tick(s, data.prices[s].price, data.prices[s].changePct)));
+    mount(el, ...items, h('span', { class: 'asof' }, `נכון ל-${String(data.asOf || '').split('-').reverse().join('.')}`));
+  } catch (e) {
+    mount(el, h('span', { class: 'tick note' }, 'המחירים לא נטענו'));
   }
+}
 
-  /* ---- CONTENT ---- */
-  function renderContent(pageId) {
-    const content = document.getElementById("content");
-    // מזהה המסך על ה-body — css/tokens.css נשען עליו כדי לבחור את גוון העולם
-    // (השקעות / תזרים / חסכונות). ר' body[data-page] שם.
-    document.body.dataset.page = pageId;
-    const module = Pages[pageId];
-    if (module && typeof module.render === "function") {
-      content.innerHTML = "";
-      module.render(content);
-    } else {
-      renderEmptyPage(content, pageId);
-    }
-    content.classList.remove("fade-in");
-    void content.offsetWidth; // force reflow
-    content.classList.add("fade-in");
-  }
+/* מסך שעוד לא נבנה: אומר מה יהיה כאן ובאיזה שלב. */
+function planned(world, sub) {
+  return h('div', { class: 'world-body' },
+    h('div', { class: 'world-head' }, h('h1', null, sub.label), h('span', { class: 'question' }, world.question)),
+    emptyState({
+      title: `נבנה בשלב ${sub.stage} — ${STAGE_NAMES[sub.stage]}`,
+      text: 'המסך הזה מתוכנן באפיון ויופיע כשהשלב שלו ייפתח. עד אז אין כאן נתונים, ובכוונה — לא מציגים מספר שלא ניתן להסביר.',
+    }));
+}
 
-  function renderEmptyPage(container, pageId) {
-    const meta = PAGE_TITLES[pageId] || { title: pageId };
-    container.innerHTML = `
-      <div class="empty-page">
-        <div class="empty-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="3"/>
-            <path d="M9 9h6M9 12h6M9 15h4"/>
-          </svg>
-        </div>
-        <h2>${meta.title}</h2>
-        <p>הדף הזה עדיין בבנייה. תוכן יתווסף בקרוב.</p>
-      </div>`;
-  }
-
-  /* ---- BOTTOM NAV ---- */
-  function renderBottomNav() {
-    const nav = document.getElementById("bottom-nav");
-    if (!nav) return;
-    nav.innerHTML = BOTTOM_NAV_ITEMS.map(item => `
-      <div class="bn-item${currentPage === item.id ? " active" : ""}" data-page="${item.id}">
-        <span class="bn-icon">${item.icon}</span>
-        <span class="bn-label">${item.label}</span>
-      </div>`).join("");
-    nav.querySelectorAll(".bn-item").forEach(el => {
-      el.addEventListener("click", () => navigateTo(el.dataset.page));
-    });
-  }
-
-  /* ---- NAVIGATION ---- */
-  function navigateTo(pageId) {
-    if (pageId === currentPage) return;
-    currentPage = pageId;
-
-    // Update sidebar active state
-    document.querySelectorAll(".nav-item").forEach(el => {
-      el.classList.toggle("active", el.dataset.page === pageId);
-    });
-
-    // Update bottom nav active state
-    document.querySelectorAll(".bn-item").forEach(el => {
-      el.classList.toggle("active", el.dataset.page === pageId);
-    });
-
-    // Update topbar title
-    renderTopbar();
-
-    // Render page
-    renderContent(pageId);
-
-    // Close mobile sidebar if open
-    if (mobileSidebarOpen) closeMobileSidebar();
-  }
-
-  /* ---- SIDEBAR COLLAPSE ---- */
-  function toggleSidebar() {
-    sidebarCollapsed = !sidebarCollapsed;
-    document.getElementById("sidebar").classList.toggle("collapsed", sidebarCollapsed);
-  }
-
-  /* ---- MOBILE SIDEBAR ---- */
-  function toggleMobileSidebar() {
-    mobileSidebarOpen ? closeMobileSidebar() : openMobileSidebar();
-  }
-
-  function openMobileSidebar() {
-    mobileSidebarOpen = true;
-    document.getElementById("sidebar").classList.remove("mobile-hidden");
-    document.getElementById("overlay").classList.add("visible");
-  }
-
-  function closeMobileSidebar() {
-    mobileSidebarOpen = false;
-    document.getElementById("sidebar").classList.add("mobile-hidden");
-    document.getElementById("overlay").classList.remove("visible");
-  }
-
-  /* ---- PROGRESS BAR ---- */
-  function _setProgress(state) {
-    const bar = document.getElementById("app-progress");
-    if (!bar) return;
-    clearTimeout(_progressTimer);
-
-    bar.className = "";          // reset all classes
-
-    if (state === "loading") {
-      bar.classList.add("visible", "loading");
-    } else if (state === "success") {
-      bar.classList.add("visible", "success");
-      _progressTimer = setTimeout(() => { bar.className = ""; }, 900);
-    } else if (state === "error") {
-      bar.classList.add("visible", "error");
-    }
-    // null / idle → bar stays hidden (className = "")
-  }
-
-  /* ---- FX RATE (topbar chip) ---- */
-  function _applyFxRate(rate) {
-    const el  = document.getElementById("topbar-fx");
-    const val = document.getElementById("topbar-fx-val");
-    if (!el || !val || !rate) return;
-    val.textContent = `₪${rate.toFixed(3)}`;
-    el.style.display = "flex";
-  }
-
-  function setFxRate(rate) {
-    if (!rate) return;
-    _fxRateValue = rate;
-    _applyFxRate(rate);
-  }
-
-  /* ---- DATA REFRESH ---- */
-  function refreshData() {
-    DataService.clearCache();
-    setDataStatus("loading");
-    renderContent(currentPage);
-  }
-
-  /* ---- STATUS PILL ---- */
-  function setDataStatus(status, errorMsg) {
-    dataStatus = status;
-    _lastErrorMsg = errorMsg || null;
-
-    // נקודת חיבור אחת לכל המסכים: כל מסך שנכשל ב-unauthorized מעלה את שער
-    // הכניסה. כך אף קובץ מסך לא צריך לדעת שקיים אימות בכלל.
-    if (status === "error" && /unauthorized/i.test(_lastErrorMsg || "") &&
-        window.FA && FA.session && !FA.session.isOpen()) {
-      FA.session.open(refreshData);
-    }
-
-    const dot  = document.getElementById("status-dot");
-    const text = document.getElementById("status-text");
-    const pill = document.getElementById("data-status-pill");
-    if (!dot || !text) return;
-
-    dot.className = "status-dot";
-
-    // Remove any existing tooltip and error class
-    const oldTip = pill?.querySelector(".error-tooltip");
-    if (oldTip) oldTip.remove();
-    pill?.classList.remove("has-error");
-
-    if (status === "live") {
-      dot.classList.add("live");
-      text.textContent = "נתונים עדכניים";
-      _setProgress("success");
-
-    } else if (status === "error") {
-      dot.classList.add("error");
-      text.textContent = "שגיאת חיבור";
-      _setProgress("error");
-      if (pill && _lastErrorMsg) {
-        pill.classList.add("has-error");
-        const tip = document.createElement("div");
-        tip.className = "error-tooltip";
-        tip.innerHTML = `<strong style="display:block;margin-bottom:4px;color:var(--danger)">שגיאת חיבור</strong>${_lastErrorMsg}`;
-        pill.appendChild(tip);
-      }
-
-    } else if (status === "loading") {
-      dot.classList.add("loading");
-      text.textContent = "טוען נתונים...";
-      _setProgress("loading");
-
-    } else {
-      text.textContent = "ממתין לנתונים";
-      _setProgress(null);
-    }
-  }
-
-  /* ---- GLOBAL EVENTS ---- */
-  function bindGlobalEvents() {
-    document.getElementById("overlay")?.addEventListener("click", closeMobileSidebar);
-
-    window.addEventListener("resize", () => {
-      const mobileBtn = document.getElementById("mobile-menu-btn");
-      if (mobileBtn) mobileBtn.style.display = window.innerWidth <= 768 ? "flex" : "none";
-      if (window.innerWidth > 768 && mobileSidebarOpen) closeMobileSidebar();
-    });
-  }
-
-  function getCurrency() { return _globalCurrency; }
-
-  return { init, navigateTo, setDataStatus, setFxRate, getCurrency, refreshData };
-})();
-
-/* ===== PAGES REGISTRY ===== */
-const Pages = {};
-
-/* ---- Boot ---- */
-document.addEventListener("DOMContentLoaded", () => App.init());
+boot();

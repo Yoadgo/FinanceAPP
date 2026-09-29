@@ -1,0 +1,55 @@
+/* ================================================================
+   BASE — איפוס, טיפוגרפיה, RTL ומספרים.
+   כלל המספרים: כל סכום במונו, LTR מבודד בתוך טקסט RTL,
+   וסימן המינוס לפני המספר (−₪1,234 ולא ₪1,234−).
+   ================================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4 { margin: 0; line-height: 1.25; text-wrap: balance; font-weight: 600; }
+p { margin: 0; }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+img, svg { max-width: 100%; }
+
+/* מספר: מונו, ספרות ברוחב שווה, כיוון שמאל-לימין מבודד */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+}
+.num.up { color: var(--up); }
+.num.down { color: var(--down); }
+.num.muted { color: var(--muted); }
+
+/* תחזית — תמיד מסומנת אחרת מנתון מדוד (אפיון, עולם החסכונות) */
+.forecast { font-style: italic; color: var(--fg-2); }
+
+code, .mono { font-family: var(--mono); font-size: .92em; }
+code { background: var(--sunken); padding: 1px 6px; border-radius: 4px; direction: ltr; unicode-bidi: isolate; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.muted { color: var(--muted); }
+.small { font-size: var(--fs-note); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

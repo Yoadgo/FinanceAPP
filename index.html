@@ -1,97 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6f8">
   <title>FinanceAPP</title>
-  <link rel="icon" href="assets/logo.png" type="image/png" />
-
-  <!-- Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-
-  <!-- Styles —  ?v= is a cache-buster: bump APP_VER on every deploy so the
-       browser / GitHub Pages CDN always fetch the latest CSS & JS. -->
-  <link rel="stylesheet" href="css/variables.css?v=30" />
-  <link rel="stylesheet" href="css/tokens.css?v=30" />
-  <link rel="stylesheet" href="css/layout.css?v=30" />
-  <link rel="stylesheet" href="css/components.css?v=30" />
-  <!-- רכיבים משותפים: שלדי טעינה, מצבי ריק/שגיאה, טוסט, דיאלוג -->
-  <link rel="stylesheet" href="css/ui.css?v=30" />
-  <link rel="stylesheet" href="css/journal.css?v=30" />
-  <link rel="stylesheet" href="css/portfolio.css?v=30" />
-  <link rel="stylesheet" href="css/pages.css?v=30" />
-  <link rel="stylesheet" href="css/expenses.css?v=30" />
-  <link rel="stylesheet" href="css/bank.css?v=30" />
-  <link rel="stylesheet" href="css/flow.css?v=30" />
-<link rel="stylesheet" href="css/plan.css?v=30">
-<link rel="stylesheet" href="css/goals.css?v=30">
-  <!-- זכוכית ותנועה (iOS 27) — שכבה תוספתית, נטענת אחרונה -->
-  <link rel="stylesheet" href="css/glass.css?v=30" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <!-- עקיפת מטמון: בכל שינוי ב-CSS או JS מעלים את ?v= כאן ובקובץ js/version.js -->
+  <link rel="stylesheet" href="css/tokens.css?v=1">
+  <link rel="stylesheet" href="css/base.css?v=1">
+  <link rel="stylesheet" href="css/layout.css?v=1">
+  <link rel="stylesheet" href="css/components.css?v=1">
 </head>
 <body>
-
-<!-- Progress bar (fixed, above everything) -->
-<div id="app-progress"><div class="progress-fill"></div></div>
-
-<div id="app">
-
-  <!-- Sidebar -->
-  <aside id="sidebar" class="mobile-hidden"></aside>
-
-  <!-- Overlay (mobile) -->
-  <div id="overlay"></div>
-
-  <!-- Main area -->
-  <div id="main">
-    <header id="topbar"></header>
-    <main id="content" class="fade-in"></main>
+  <!-- הכל מצויר מ-js/app.js. עד שהוא עולה — שלד טעינה, לא מסך ריק. -->
+  <div id="root">
+    <div class="gate"><div class="card"><div class="skel"><i class="lg"></i><i></i><i></i></div></div></div>
   </div>
+  <div id="drawer-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
 
-</div>
-
-<!-- Bottom nav (mobile only — rendered by App.renderBottomNav) -->
-<nav id="bottom-nav"></nav>
-
-<!-- 1. Modules (utilities, data, logic) -->
-<!-- 0. שכבת רכיבים — נטענת ראשונה, המסכים נשענים על FA.ui ו-FA.skel -->
-<script src="js/ui/ui.js?v=30"></script>
-<script src="js/ui/money.js?v=30"></script>
-<script src="js/ui/skel.js?v=30"></script>
-<script src="js/ui/session.js?v=30"></script>
-<script src="js/ui/accounts.js?v=30"></script>
-<script src="js/ui/instruments.js?v=30"></script>
-
-<script src="js/modules/navigation.js?v=30"></script>
-<script src="js/modules/dataService.js?v=30"></script>
-<script src="js/modules/classifier.js?v=30"></script>
-<script src="js/modules/portfolioEngine.js?v=30"></script>
-<script src="js/modules/analytics.js?v=30"></script>
-<script src="js/modules/research.js?v=30"></script>
-<script src="js/modules/expenses.js?v=30"></script>
-<script src="js/modules/bank.js?v=30"></script>
-<script src="js/modules/flow.js?v=30"></script>
-<script src="js/modules/plan.js?v=30"></script>
-<script src="js/modules/goals.js?v=30"></script>
-
-<!-- 2. App shell — defines Pages={} and App before any page registers itself -->
-<script src="js/app.js?v=30"></script>
-
-<!-- 3. Pages — each file registers itself into Pages{} -->
-<script src="js/components/dashboard.js?v=30"></script>
-<script src="js/components/journal.js?v=30"></script>
-<script src="js/components/portfolio.js?v=30"></script>
-<script src="js/components/savings.js?v=30"></script>
-<script src="js/components/cashflow.js?v=30"></script>
-<script src="js/components/performance.js?v=30"></script>
-<script src="js/components/research.js?v=30"></script>
-<script src="js/components/expenses.js?v=30"></script>
-<script src="js/components/bank.js?v=30"></script>
-<script src="js/components/flow.js?v=30"></script>
-<script src="js/components/plan.js?v=30"></script>
-<script src="js/components/goals.js?v=30"></script>
-
-<!-- 4. שכבת תנועה — אפקטים בלבד, אחרי המסכים -->
-<script src="js/ui/motion.js?v=30"></script>
-
+  <noscript>האפליקציה דורשת JavaScript.</noscript>
+  <!-- מודולים: הדפדפן טוען את app.js, ומשם כל קובץ מייבא את מה שהוא צריך.
+       אין שלב בנייה ואין התקנה. -->
+  <script type="module" src="js/app.js?v=1"></script>
 </body>
 </html>

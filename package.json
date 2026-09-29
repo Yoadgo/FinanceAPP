@@ -1,0 +1,6 @@
+{
+  "name": "financeapp",
+  "private": true,
+  "type": "module",
+  "description": "הקובץ הזה קיים רק כדי ש-node יריץ את הבדיקות כמודולי ES. אין תלויות ואין npm install."
+}

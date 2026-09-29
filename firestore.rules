@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// ================================================================
+// כללי האבטחה של FinanceAPP. זה השומר האמיתי של הנתונים — לא הקוד
+// בדפדפן. הקובץ בריפו הוא התיעוד; הכללים נכנסים לתוקף רק כשמדביקים
+// אותם בקונסולה: Firestore Database → Rules → Publish.
+//
+// חמישה כללים:
+// 1. רק מי שהמזהה שלו ברשימת members של households/main קורא וכותב.
+// 2. רשימת החברים נערכת בקונסולה בלבד — לא מהאפליקציה.
+// 3. אין מחיקה. "מחיקה" היא voided: true.
+// 4. כל כתיבה חותמת את הכותב: updatedBy חייב להיות המשתמש המחובר.
+// 5. יומן הקליטות: יצירה, ועדכון רק של שדות הביטול. היסטוריה לא משוכתבת.
+// ================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function household() { return get(/databases/$(database)/documents/households/main).data; }
+    function isMember() { return signedIn() && request.auth.uid in household().members; }
+    function stampedByMe() { return request.resource.data.updatedBy == request.auth.uid; }
+
+    // שדות החותמת שכל מסמך נושא (store.js מוסיף אותם)
+    function stampKeys() { return ['createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'voided', 'voidedBy', 'voidedAt']; }
+
+    match /households/main {
+      allow read: if isMember();
+      allow write: if false;
+    }
+
+    // תנועות השקעה — רשימת שדות סגורה (js/engines/model.js)
+    match /households/main/transactions/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember() && stampedByMe()
+        && request.resource.data.keys().hasOnly(['date', 'type', 'name', 'symbol', 'portfolio', 'qty', 'amountIls',
+             'price', 'currency', 'commission', 'fees', 'totalFx', 'totalIls', 'cashBalanceIls', 'estimatedTax',
+             'source', 'note'].concat(stampKeys()))
+        && request.resource.data.date is string && request.resource.data.date.matches('^\\d{4}-\\d{2}-\\d{2}$');
+      allow delete: if false;
+    }
+
+    // שורות אשראי — רשימת שדות סגורה (js/engines/ingestPlan.js)
+    match /households/main/expenses/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember() && stampedByMe()
+        && request.resource.data.keys().hasOnly(['date', 'card', 'issuer', 'billing', 'billingKey', 'merchant', 'merchantNorm',
+             'amount', 'currency', 'charge', 'chargeCurrency', 'kindSection', 'note', 'noteKind', 'installment', 'installments',
+             'category', 'subcategory', 'tag', 'status', 'ruleId', 'key', 'occ', 'source', 'goalId'].concat(stampKeys()))
+        // פרטיות: כרטיס = 4 ספרות בלבד
+        && request.resource.data.card is string && request.resource.data.card.matches('^\\d{4}$');
+      allow delete: if false;
+    }
+
+    // תנועות עו"ש — רשימת שדות סגורה
+    match /households/main/bank/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember() && stampedByMe()
+        && request.resource.data.keys().hasOnly(['date', 'valueDate', 'opCode', 'ref', 'desc', 'amount', 'debit', 'credit',
+             'bucket', 'category', 'subcategory', 'freq', 'tag', 'goalId', 'settlesCard', 'settlesMonth',
+             'status', 'ruleId', 'key', 'occ', 'source'].concat(stampKeys()));
+      allow delete: if false;
+    }
+
+    // יומן הקליטות — יצירה בלבד; אחר כך רק סימון ביטול
+    match /households/main/imports/{id} {
+      allow read: if isMember();
+      allow create: if isMember() && stampedByMe();
+      allow update: if isMember() && stampedByMe()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voided', 'voidedBy', 'voidedAt', 'updatedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // כל שאר האוספים (rules, categories, market, pots, snapshots, journal, accounts, instruments, settings)
+    match /households/main/{coll}/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember() && stampedByMe()
+        && coll in ['rules', 'categories', 'market', 'pots', 'snapshots', 'journal', 'accounts', 'instruments', 'settings'];
+      allow delete: if false;
+    }
+  }
+}
