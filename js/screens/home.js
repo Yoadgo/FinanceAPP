@@ -17,6 +17,7 @@ import { ils, todayIso } from '../core/format.js';
 import * as store from '../core/store.js';
 import { session } from '../core/auth.js';
 import { monthSavings } from '../engines/savings.js';
+import { bankEffective } from '../engines/spend.js';
 import { creditBucket } from '../engines/ingestPlan.js';
 import { loadInvest, loadMarket } from './invest/data.js';
 import { investChartPanel } from './invest/chartPanel.js';
@@ -27,10 +28,10 @@ export async function render(el) {
   const greet = session.user ? session.user.name.split(' ')[0] : '';
   mount(el, head(greet), h('div', { class: 'grid main-side' }, loading('card'), loading('card')), loading('card'));
 
-  let bank, expenses, goals, counts, inv, market;
+  let bank, expenses, goals, loans, counts, inv, market;
   try {
-    [bank, expenses, goals, counts, inv, market] = await Promise.all([
-      store.list('bank'), store.list('expenses'), store.get('settings', 'goals'),
+    [bank, expenses, goals, loans, counts, inv, market] = await Promise.all([
+      store.list('bank'), store.list('expenses'), store.get('settings', 'goals'), store.get('settings', 'loans'),
       Promise.all([store.count('expenses', ['status', '==', 'pending']), store.count('bank', ['status', '==', 'pending']), store.count('imports'), store.count('pots')]),
       loadInvest(), loadMarket(),
     ]);
@@ -39,6 +40,8 @@ export async function render(el) {
     return;
   }
   const [expPending, bankPending, imports, pots] = counts;
+  /* ריבית לפי הלוואה, וסילוק כרטיס בלי פירוט = הוצאה מרוכזת */
+  bank = bankEffective(bank, expenses, loans);
   const month = todayIso().slice(0, 7);
 
   mount(el,

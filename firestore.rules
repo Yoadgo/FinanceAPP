@@ -45,7 +45,7 @@ service cloud.firestore {
       allow create, update: if isMember() && stampedByMe()
         && request.resource.data.keys().hasOnly(['date', 'card', 'issuer', 'billing', 'billingKey', 'merchant', 'merchantNorm',
              'amount', 'currency', 'charge', 'chargeCurrency', 'kindSection', 'note', 'noteKind', 'installment', 'installments',
-             'category', 'subcategory', 'tag', 'status', 'ruleId', 'key', 'occ', 'source', 'goalId'].concat(stampKeys()))
+             'category', 'subcategory', 'tag', 'status', 'ruleId', 'key', 'occ', 'source', 'goalId', 'offsetOf'].concat(stampKeys()))
         // פרטיות: כרטיס = 4 ספרות בלבד
         && request.resource.data.card is string && request.resource.data.card.matches('^\\d{4}$');
       allow delete: if false;

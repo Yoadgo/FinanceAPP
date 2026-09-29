@@ -10,6 +10,7 @@ import { day } from '../../core/format.js';
 import { hrefOf } from '../../core/routes.js';
 import { session } from '../../core/auth.js';
 import * as store from '../../core/store.js';
+import { clearSpendCache } from '../spend/data.js';
 
 export async function render(el, ctx) {
   mount(el, head(ctx), loading('table'));
@@ -61,6 +62,7 @@ export async function voidImport(importId) {
   const uid = session.user ? session.user.uid : null;
   const at = new Date().toISOString();
   await store.patchMany(coll, rows.filter(r => !r.voided).map(r => ({ id: r.id, fields: { voided: true, voidedBy: uid, voidedAt: at } })));
+  clearSpendCache();
   await store.patch('imports', importId, { voided: true, voidedBy: uid, voidedAt: at });
   return rows.length;
 }

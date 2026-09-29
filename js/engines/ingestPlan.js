@@ -111,8 +111,19 @@ async function planCredit(values, ctx, base) {
   return out;
 }
 
+/* ⚠️ נמצא 30.9.2026: מפענח העו"ש (הוסב כמו שהוא מ-v3) קורא תאריך
+   ב-getUTC*, כי ב-Apps Script הגיליון החזיר Date של חצות UTC. אבל
+   readFile.js מחזיר חצות **מקומית** (כך מפענח האשראי צריך). בישראל
+   (UTC+3) חצות 1.6 מקומית = 31.5 21:00 UTC → כל תנועה זזה יום אחורה:
+   המשכורת של 1.6 נופלת למאי, והמפתח לא תואם למה שכבר במסד (כפילויות).
+   התיקון כאן, במתאם, ולא במפענח המוגן: Date מקומי → אותו יום ב-UTC. */
+export function toUtcDays(values) {
+  return values.map(r => (r || []).map(c => (c instanceof Date && !isNaN(c.getTime()))
+    ? new Date(Date.UTC(c.getFullYear(), c.getMonth(), c.getDate())) : c));
+}
+
 async function planBank(values, ctx, base) {
-  const bp = parseBankSheet(values);
+  const bp = parseBankSheet(toUtcDays(values));
   const rows = withBankOccurrence(bp.rows);
   const d = diffAgainstExisting(rows, ctx.bankCounts || {});
   const out = { ...base, range: { from: bp.meta.from, to: bp.meta.to }, parsed: rows.length, skipped: d.skipped, warnings: bp.warnings.slice() };

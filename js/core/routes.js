@@ -26,10 +26,10 @@ export const WORLDS = [
     id: 'spend', label: 'הוצאות ועו"ש', short: 'הוצאות', dot: 'spend',
     question: 'על מה הכסף יוצא, ומה עוד צפוי לצאת',
     subs: [
-      { id: 'pending', label: 'לסיווג', stage: 4 },
-      { id: 'breakdown', label: 'על מה הוצאנו', stage: 4 },
-      { id: 'cashflow', label: 'עו"ש ותזרים', stage: 4 },
-      { id: 'rules', label: 'כללים וקטגוריות', stage: 4 },
+      { id: 'breakdown', label: 'על מה הוצאנו', stage: 4, load: () => import('../screens/spend/breakdown.js') },
+      { id: 'pending', label: 'לסיווג', stage: 4, load: () => import('../screens/spend/pending.js') },
+      { id: 'cashflow', label: 'עו"ש ותזרים', stage: 4, load: () => import('../screens/spend/cashflow.js') },
+      { id: 'rules', label: 'כללים וקטגוריות', stage: 4, load: () => import('../screens/spend/rules.js') },
     ],
   },
   {

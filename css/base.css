@@ -38,10 +38,13 @@ img, svg { max-width: 100%; }
 code, .mono { font-family: var(--mono); font-size: .92em; }
 code { background: var(--sunken); padding: 1px 6px; border-radius: 4px; direction: ltr; unicode-bidi: isolate; }
 
+/* ריווח אותיות ומונו שוברים עברית (האותיות נפרדות: "א י ך"). לכן
+   הכותרת הקטנה בסאנס, בלי ריווח — ורק הלטינית בה באותיות גדולות. */
 .eyebrow {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 11.5px;
-  letter-spacing: .08em;
+  font-weight: 600;
+  letter-spacing: .01em;
   text-transform: uppercase;
   color: var(--muted);
 }

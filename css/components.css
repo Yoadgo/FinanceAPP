@@ -67,7 +67,7 @@
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.sm { padding: 3px 10px; font-size: 12px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-chip); overflow: hidden; background: var(--sunken); }
-.seg button { font: inherit; font-size: 11.5px; font-family: var(--mono); padding: 3px 9px; border: 0; background: transparent; color: var(--fg-2); cursor: pointer; }
+.seg button { font: inherit; font-size: 12px; font-family: var(--sans); font-variant-numeric: tabular-nums; padding: 3px 9px; border: 0; background: transparent; color: var(--fg-2); cursor: pointer; }
 .seg button + button { border-inline-start: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--card); color: var(--accent); font-weight: 600; }
 
@@ -75,10 +75,11 @@
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
 .panel .table-wrap { border: 0; border-radius: 0; }
 table.dense { width: 100%; border-collapse: collapse; font-size: var(--fs-table); }
-table.dense th { position: sticky; top: 0; background: var(--sunken); color: var(--muted); font-weight: 500; font-size: 11px; letter-spacing: .04em; text-align: start; padding: 0 10px; height: 28px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+table.dense th { position: sticky; top: 0; background: var(--sunken); color: var(--muted); font-weight: 600; font-size: 11.5px; text-align: start; padding: 0 10px; height: 28px; white-space: nowrap; border-bottom: 1px solid var(--line); }
 table.dense td { padding: 0 10px; height: var(--row-h); border-bottom: 1px solid var(--grid); white-space: nowrap; }
 table.dense td + td, table.dense th + th { border-inline-start: 1px solid var(--grid); }
-table.dense td.num, table.dense th.num { text-align: end; font-family: var(--mono); }
+table.dense td.num { text-align: end; font-family: var(--mono); }
+table.dense th.num { text-align: end; }
 table.dense tbody tr:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
 table.dense tr.clickable { cursor: pointer; }
 table.dense tr.expanded td { background: var(--accent-soft); }

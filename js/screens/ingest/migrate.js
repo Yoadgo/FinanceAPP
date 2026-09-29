@@ -3,7 +3,7 @@
 
    שלושה קבצי CSV מהגיליון הישן (קובץ ← הורדה ← CSV, מהטאב הפעיל):
      Transactions       — חובה. 1,660 תנועות ההשקעה.
-     USD_ILS_History    — חובה. שערים יומיים מ-2022.
+     USD_ILS            — רשות. שערים יומיים מ-2022 (גם בגיליון המחירים).
      Rules              — רשות. כללי הסיווג (אם לא — זורעים את כללי הזרע).
 
    כלום לא נכתב עד שכל הבדיקות ירוקות ויועד לוחץ "כתיבה". הכתיבה
@@ -18,6 +18,8 @@ import { errorState, table, chip, note, loading } from '../../ui/components.js';
 import { toast } from '../../ui/toast.js';
 import { usd, qty as fq, day } from '../../core/format.js';
 import { analyzeTransactions, analyzeFx } from '../../engines/migration.js';
+import { analyzeSpend } from '../../engines/migrateSpend.js';
+import { clearSpendCache } from '../spend/data.js';
 import { yearDocsFromSeries } from '../../engines/fx.js';
 import { seedRuleDocs } from '../../engines/merchants.js';
 import { parseCsv, toObjects } from '../../ingest/csv.js';
@@ -28,6 +30,8 @@ import { refreshHistory } from '../../core/market.js';
 import { PRICES_URL } from '../../config.js';
 
 const S = { tx: null, fx: null, rules: null, txName: '', fxName: '', rulesName: '', existing: null };
+/* חלק ב': הוצאות ועו"ש (טאבים Expenses · Bank · Categories · Imports) */
+const P = { texts: {}, names: {}, result: null, busy: false };
 
 export async function render(el, ctx) {
   mount(el, head(), loading('card'));
@@ -63,13 +67,13 @@ function draw(el, ctx) {
   const redraw = () => draw(el, ctx);
   const steps = h('ol', { class: 'small', style: { margin: 0, paddingInlineStart: '20px', display: 'grid', gap: '4px' } },
     h('li', null, 'לפתוח את StocksData, לעמוד על הטאב Transactions, ואז: קובץ ← הורדה ← ערכים מופרדים בפסיקים (CSV).'),
-    h('li', null, 'רשות: אותו דבר לטאב USD_ILS_History. אם גיליון המחירים מחובר — השערים נמשכים ממנו, מ-2022.'),
+    h('li', null, 'רשות: אותו דבר לטאב USD_ILS. אם גיליון המחירים מחובר — השערים נמשכים ממנו, מ-2022.'),
     h('li', null, 'רשות: אותו דבר לטאב Rules (כללי הסיווג). בלעדיו נזרעים 30 כללי הזרע.'),
     h('li', null, 'לגרור את הקבצים לכאן. הבדיקות רצות מיד, בדפדפן, ושום דבר לא נשלח עד הלחיצה על "כתיבה".'));
 
   const pickers = h('div', { class: 'grid cols-3' },
     picker('mg-tx', S.txName || 'Transactions.csv', S.tx ? `${S.tx.total} שורות` : 'חובה', (n, t) => { S.txName = n; S.tx = analyzeTransactions(t); redraw(); }),
-    picker('mg-fx', S.fxName || 'USD_ILS_History.csv', S.fx ? `${S.fx.series.length} שערים` : 'רשות', (n, t) => { S.fxName = n; S.fx = analyzeFx(t); redraw(); }),
+    picker('mg-fx', S.fxName || 'USD_ILS.csv', S.fx ? `${S.fx.series.length} שערים` : 'רשות', (n, t) => { S.fxName = n; S.fx = analyzeFx(t); redraw(); }),
     picker('mg-rules', S.rulesName || 'Rules.csv', S.rules ? `${S.rules.length} כללים` : 'רשות', (n, t) => { S.rulesName = n; S.rules = parseRules(t); redraw(); }));
 
   const blocks = [head(), h('div', { class: 'card', style: { display: 'grid', gap: '12px' } }, h('span', { class: 'eyebrow' }, 'איך'), steps), pickers];
@@ -109,7 +113,84 @@ function draw(el, ctx) {
       : 'גיליון המחירים עוד לא מחובר (PRICES_URL ב-config.js).'),
     h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, hbtn, hprog)));
 
+  blocks.push(spendBlock(redraw));
   mount(el, ...blocks);
+}
+
+/* ── חלק ב': הוצאות ועו"ש ── ההחלטות שכבר קיבלת ב-v3 (362 שורות
+   מסווגות) עוברות כמו שהן. מזהי המסמכים זהים לקליטה רגילה, ולכן
+   העלאה עתידית של אותם קבצים לא תשכפל. שורה שכבר קיימת במסד לא
+   נדרסת — כדי שסיווג שעשית כאן לא יימחק בהרצה חוזרת. */
+function spendBlock(redraw) {
+  const pick = (key, file, hint) => picker(`mg-sp-${key}`, P.names[key] || file, P.texts[key] ? 'נטען' : hint, async (n, t) => {
+    P.names[key] = n; P.texts[key] = t;
+    P.result = P.texts.expenses || P.texts.bank ? await analyzeSpend(P.texts) : null;
+    redraw();
+  });
+  const parts = [
+    h('div', { class: 'card-title' }, 'הוצאות ועו"ש מהגיליון'),
+    h('p', { class: 'small muted' }, 'אותה דרך: לעמוד על הטאב ב-StocksData ← קובץ ← הורדה ← CSV. Expenses ו-Bank הם העיקר; Categories ו-Imports משלימים (רשימת הקטגוריות, ויומן הקבצים שכבר נקלטו).'),
+    h('div', { class: 'grid cols-4' }, pick('expenses', 'Expenses.csv', 'שורות אשראי'), pick('bank', 'Bank.csv', 'עו"ש'), pick('categories', 'Categories.csv', 'רשות'), pick('imports', 'Imports.csv', 'רשות')),
+    h('p', { class: 'small muted' }, S.rules ? `כללי הסיווג: ${S.rules.length} מ-Rules.csv (למעלה) ייכתבו גם כאן.` : 'כללי הסיווג: אם העלית Rules.csv למעלה — הם ייכתבו גם כאן. בלי זה נזרעים 30 כללי הזרע.'),
+  ];
+  const r = P.result;
+  if (r) {
+    parts.push(checksList(r.checks));
+    if (r.bad.length) parts.push(table({ columns: [{ key: 'tab', label: 'טאב' }, { key: 'row', label: 'שורה' }, { key: 'p', label: 'הבעיה' }], rows: r.bad.slice(0, 30).map((b, i) => ({ id: i, tab: b.tab, row: b.row, p: b.problems.join(' · ') })) }));
+    const ST = { ok: 'מאושרות', auto: 'אוטומטיות', pending: 'בהמתנה' };
+    const st = o => Object.entries(o).map(([k, v]) => `${v} ${ST[k] || k}`).join(' · ');
+    parts.push(h('p', { class: 'small' }, `אשראי: ${r.summary.expenses} שורות (${st(r.summary.expStatus)}) · עו"ש: ${r.summary.bank} (${st(r.summary.bankStatus)}) · ${r.summary.categories} קטגוריות · ${r.summary.imports} קבצים ביומן`));
+    if (r.summary.byBilling.length) parts.push(h('p', { class: 'small muted' }, 'סכום הפירוט לפי חודש חיוב: ', r.summary.byBilling.map(([m, v]) => num(`${m} ${usdless(v)}`)).reduce((a, x, i) => (i ? [...a, ' · ', x] : [x]), [])));
+    const ready = r.checks.every(c => c.pass);
+    const btn = h('button', { class: 'btn primary', disabled: ready && !P.busy ? null : true }, 'כתיבת ההוצאות והעו"ש');
+    const prog = h('span', { class: 'small muted' });
+    btn.addEventListener('click', () => writeSpend(btn, prog, redraw));
+    parts.push(h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } }, btn, prog));
+  }
+  return h('div', { class: 'card', style: { display: 'grid', gap: '12px' } }, parts);
+}
+
+const usdless = v => `₪${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+async function writeSpend(btn, prog, redraw) {
+  const r = P.result;
+  P.busy = true; btn.disabled = true;
+  try {
+    prog.textContent = 'בודק מה כבר במסד…';
+    const [ex, bk, im, cats] = await Promise.all([store.list('expenses', { includeVoided: true }), store.list('bank', { includeVoided: true }), store.list('imports', { includeVoided: true }), store.list('categories', { includeVoided: true })]);
+    const has = list => new Set(list.map(d => d.id));
+    const exIds = has(ex), bkIds = has(bk), imIds = has(im);
+    const catKeys = new Set(cats.map(c => `${c.category}|${c.subcategory || ''}`));
+    const newE = r.expenses.filter(x => !exIds.has(x.id));
+    const newB = r.bank.filter(x => !bkIds.has(x.id));
+    const newI = r.imports.filter(x => !imIds.has(x.id));
+    const newC = [];
+    for (const c of r.categories) {
+      const k = `${c.category}|${c.subcategory}`;
+      if (!catKeys.has(k)) newC.push({ id: await docId('c', k), data: c });
+    }
+    if (newC.length) { prog.textContent = 'קטגוריות…'; await store.putMany('categories', newC); }
+    await store.putMany('expenses', newE, { onProgress: (d, t) => { prog.textContent = `אשראי: ${d} / ${t}`; } });
+    await store.putMany('bank', newB, { onProgress: (d, t) => { prog.textContent = `עו"ש: ${d} / ${t}`; } });
+    if (newI.length) { prog.textContent = 'יומן קבצים…'; await store.putMany('imports', newI); }
+    /* כללי הסיווג — רק אם עוד אין במסד (כלל שיועד יצר כאן לא נדרס) */
+    const existingRules = await store.list('rules', { includeVoided: true });
+    let nRules = 0;
+    if (!existingRules.length) {
+      const rules = S.rules || seedRuleDocs();
+      await store.putMany('rules', rules.map(({ id, ...data }) => ({ id: String(id), data })));
+      nRules = rules.length;
+    }
+    clearSpendCache();
+    prog.textContent = '';
+    const skipped = (r.expenses.length - newE.length) + (r.bank.length - newB.length);
+    toast(`נכתבו ${newE.length} שורות אשראי, ${newB.length} עו"ש, ${newC.length} קטגוריות, ${newI.length} קבצים ביומן${nRules ? `, ${nRules} כללים` : ''}.${skipped ? ` ${skipped} שורות כבר היו במסד ולא נדרסו.` : ''}`, { ms: 12000 });
+  } catch (e) {
+    prog.textContent = '';
+    toast(`הכתיבה נעצרה: ${e.message || e}. מה שנכתב נשאר; הרצה חוזרת משלימה בלי לדרוס.`, { ms: 15000 });
+  }
+  P.busy = false; btn.disabled = false;
+  redraw();
 }
 
 function summaryLine() {
@@ -176,13 +257,17 @@ async function write(btn, progress, redraw) {
     const years = S.fx ? yearDocsFromSeries(S.fx.series) : [];
     if (years.length) await store.putMany('market', years.map(y => ({ id: `fx_${y.year}`, data: y })));
     progress.textContent = 'כללי סיווג…';
-    const rules = S.rules || seedRuleDocs();
-    await store.putMany('rules', rules.map(({ id, ...data }) => ({ id: String(id), data })));
+    /* כללים — רק אם עוד אין במסד. הרצה חוזרת לא מחזירה לחיים כלל
+       שהשבתת, ולא דורסת כלל שיצרת כאן. */
+    const haveRules = (await store.list('rules', { includeVoided: true })).length;
+    const rules = haveRules ? [] : (S.rules || seedRuleDocs());
+    if (rules.length) await store.putMany('rules', rules.map(({ id, ...data }) => ({ id: String(id), data })));
 
     clearInvestCache();
+    clearSpendCache();
     S.existing = items.length;
     progress.textContent = '';
-    toast(`נכתבו ${items.length.toLocaleString('en-US')} תנועות, ${years.length} מסמכי שערים ו-${rules.length} כללים.`);
+    toast(`נכתבו ${items.length.toLocaleString('en-US')} תנועות, ${years.length} מסמכי שערים${rules.length ? ` ו-${rules.length} כללים` : ' (הכללים שבמסד נשארו כמו שהם)'}.`);
     if (orphans.length) toast(`${orphans.length} תנועות במסד לא קיימות יותר בגיליון. בדוק אותן במסך התנועות לפני שממשיכים.`, { ms: 15000 });
     redraw();
   } catch (e) {

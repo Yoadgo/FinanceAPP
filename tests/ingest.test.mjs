@@ -94,6 +94,8 @@ else {
     info(`${bp.rows.length} תנועות, ${bp.meta.from} → ${bp.meta.to}`);
     ok(bp.rows.length > 50, 'יש תנועות');
     const bplan = await planImport(bvalues, { fileName: bname, hash: 'bank1', importedHashes: new Set(), bankCounts: {}, rules });
+    eq(bplan.add[0].data.date, '2026-06-01', `תאריך העו"ש לא זז יום אחורה באזור ${Intl.DateTimeFormat().resolvedOptions().timeZone} (המשכורת של 1.6 נשארת ביוני)`);
+    ok(bplan.add.every(a => a.data.date >= '2026-06-01' && a.data.date <= '2026-09-01'), 'כל התאריכים בתוך טווח הדוח 01/06–01/09');
     eq(bplan.status, 'ok', 'תוכנית עו"ש ok');
     const settles = bplan.add.filter(x => x.data.settlesCard);
     info(`${settles.length} שורות סילוק אשראי זוהו`);

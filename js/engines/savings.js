@@ -20,6 +20,9 @@
    ⚠️ שאלה פתוחה (לשיחה): רכישות באשראי החודש יורדות רק בחודש הבא.
    "נשאר להוציא" לפי מועד חיוב לא מרגיש אותן עד שקובץ האשראי הבא נקלט.
    ================================================================ */
+/* הדלי שבו השורה נספרת: effBucket (spend.bankEffective — ריבית לפי
+   הלוואה, סילוק בלי פירוט = הוצאה מרוכזת) אם חושב, אחרת הדלי השמור. */
+const bk = r => r.effBucket || r.bucket;
 const sig = desc => String(desc || '').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
 const prevMonth = ym => { const [y, m] = ym.split('-').map(Number); return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; };
 
@@ -31,8 +34,8 @@ export function monthSavings({ month, bank = [], credit = [], goal = 0, creditBu
   const prev = prevMonth(month);
   const inPrev = r => String(r.date).slice(0, 7) === prev;
 
-  const incomeRows = bank.filter(r => inMonth(r) && r.bucket === 'הכנסה');
-  const spendBank = bank.filter(r => inMonth(r) && r.bucket === 'צריכה');
+  const incomeRows = bank.filter(r => inMonth(r) && bk(r) === 'הכנסה');
+  const spendBank = bank.filter(r => inMonth(r) && bk(r) === 'צריכה');
   const creditRows = credit.filter(r => r.billingKey === month && creditBucket(r.category) === 'צריכה');
 
   const incomeActual = incomeRows.reduce((s, r) => s + r.amount, 0);
@@ -42,8 +45,8 @@ export function monthSavings({ month, bank = [], credit = [], goal = 0, creditBu
   /* קבועות מהחודש הקודם שעוד לא הופיעו החודש — לפי "חתימת" התיאור */
   const seen = new Set(bank.filter(inMonth).map(r => sig(r.desc)));
   const pendingFixed = bank.filter(r => inPrev(r) && r.freq === 'קבוע' && !seen.has(sig(r.desc)));
-  const expIncome = pendingFixed.filter(r => r.bucket === 'הכנסה').reduce((s, r) => s + r.amount, 0);
-  const expSpend = pendingFixed.filter(r => r.bucket === 'צריכה').reduce((s, r) => s - r.amount, 0);
+  const expIncome = pendingFixed.filter(r => bk(r) === 'הכנסה').reduce((s, r) => s + r.amount, 0);
+  const expSpend = pendingFixed.filter(r => bk(r) === 'צריכה').reduce((s, r) => s - r.amount, 0);
 
   const creditKnown = creditRows.length > 0;
   const income = incomeActual + expIncome;
@@ -58,10 +61,10 @@ export function monthSavings({ month, bank = [], credit = [], goal = 0, creditBu
     creditKnown,
     parts: {
       income: incomeRows.map(r => ({ label: r.desc, date: r.date, value: r.amount, freq: r.freq })),
-      expIncome: pendingFixed.filter(r => r.bucket === 'הכנסה').map(r => ({ label: r.desc, date: r.date, value: r.amount })),
+      expIncome: pendingFixed.filter(r => bk(r) === 'הכנסה').map(r => ({ label: r.desc, date: r.date, value: r.amount })),
       spendBank: spendBank.map(r => ({ label: r.desc, date: r.date, value: -r.amount })),
       credit: creditRows.length ? [{ label: `חיוב אשראי ${month} (${creditRows.length} שורות צריכה)`, value: creditRows.reduce((s, r) => s + r.charge, 0) }] : [],
-      expSpend: pendingFixed.filter(r => r.bucket === 'צריכה').map(r => ({ label: r.desc, date: r.date, value: -r.amount })),
+      expSpend: pendingFixed.filter(r => bk(r) === 'צריכה').map(r => ({ label: r.desc, date: r.date, value: -r.amount })),
     },
   };
 }

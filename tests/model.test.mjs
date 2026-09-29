@@ -84,6 +84,10 @@ section('שערים');
   const fx = analyzeFx('Date,Rate\n01/01/2022,3.11\n02/01/2022,3.12\n05/01/2022,3.15\n');
   ok(fx.checks.every(c => c.pass), 'CSV שערים תקין');
   eq(fx.series.length, 3, '3 שערים');
+  const sheet = analyzeFx('TODAY,USD-ILS\n30/09/2026,3.06706\n,\nDate,Close\n01/01/2022 23:58:00,3.11333\n29/09/2026 23:58:00,3.06706\n');
+  ok(sheet.checks.every(c => c.pass), 'מבנה הטאב USD_ILS (שער "עכשיו" ואז Date,Close) נקרא');
+  eq(sheet.series.length, 2, 'שער "עכשיו" לא נכנס להיסטוריה');
+  eq(sheet.last, '2026-09-29', 'ההיסטוריה נגמרת בסגירה האחרונה');
   const bad = analyzeFx('Date,Rate\n01/01/2022,0.32\n');
   ok(!bad.checks.every(c => c.pass), 'שער הפוך (0.32) נדחה');
 

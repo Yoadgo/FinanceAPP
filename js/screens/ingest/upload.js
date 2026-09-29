@@ -13,6 +13,7 @@ import { ils, day } from '../../core/format.js';
 import { readWorkbookFile } from '../../ingest/readFile.js';
 import { planImport, importRecord } from '../../engines/ingestPlan.js';
 import * as store from '../../core/store.js';
+import { clearSpendCache } from '../spend/data.js';
 import { hrefOf } from '../../core/routes.js';
 
 export async function render(el, ctx) {
@@ -103,6 +104,7 @@ async function commit(plan, btn, progress, status) {
   const coll = plan.kind === 'credit' ? 'expenses' : 'bank';
   try {
     await store.putMany(coll, plan.add, { onProgress: (d, t) => { progress.textContent = `${d} / ${t}`; } });
+    clearSpendCache();
     await store.put('imports', plan.importId, importRecord(plan));
     progress.textContent = '';
     mount(status, note(`נקלטו ${plan.add.length} שורות מ-${plan.fileName}.`, { kind: 'good', action: h('a', { class: 'btn sm', href: hrefOf('ingest', 'log') }, 'ליומן הקליטות') }));

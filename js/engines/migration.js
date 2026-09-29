@@ -111,10 +111,19 @@ export function analyzeTransactions(csvText) {
   return result;
 }
 
-/* CSV של שערים: עמודה ראשונה תאריך, השנייה שער. כותרות לא מחייבות —
-   הטאב USD_ILS_History נוצר ידנית ושמות העמודות בו לא מובטחים.     */
+/* CSV של שערים: עמודה ראשונה תאריך, השנייה שער. כותרות לא מחייבות.
+   הטאב USD_ILS בגיליון (נבדק 30.9.2026) בנוי כך:
+     TODAY,USD-ILS           ← כותרת של שער "עכשיו"
+     30/09/2026,3.06706      ← השער העדכני — לא סגירה, לא נכנס להיסטוריה
+     (שורה ריקה)
+     Date,Close              ← מכאן ההיסטוריה
+     01/01/2022 23:58:00,3.11333
+   לכן: אם יש שורת כותרת 'Date' — מתחילים אחריה. אחרת (קובץ פשוט)
+   מדלגים רק על שורת הכותרת הראשונה.                                 */
 export function analyzeFx(csvText) {
-  const rows = parseCsv(csvText);
+  const all = parseCsv(csvText);
+  const hdr = all.findIndex(r => String(r[0] || '').trim().toLowerCase() === 'date');
+  const rows = hdr > 0 ? all.slice(hdr) : all;
   const series = [], bad = [];
   rows.forEach((r, i) => {
     const date = toIsoDay(r[0]);
