@@ -18,6 +18,7 @@ import { loadInvest, loadMarket } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { lastCloses } from '../../engines/series.js';
 import { efficiency } from '../../engines/efficiency.js';
+import { groupBySymbol } from '../../engines/holdingsGroup.js';
 import * as liveApi from '../../core/live.js';
 import { BENCHMARK } from '../../config.js';
 
@@ -125,10 +126,16 @@ function draw(el, ctx, inv, market, live) {
 
   const warn = live && live.refreshError ? note(`המחירים לא רועננו: ${live.refreshError}.`, { kind: 'info' }) : null;
 
-  const tbl = table({
-    columns: [
-      { key: 'symbol', label: 'נייר', render: p => h('span', { class: 'sym' }, p.symbol) },
-      { key: 'portfolio', label: 'תיק', render: p => h('span', { class: 'muted' }, p.portfolio) },
+  /* "כל התיקים": שורה אחת לנייר (סכום על כל התיקים), ולחיצה פותחת שורת
+     פירוט לכל תיק. תיק אחד: כמו קודם — שורה לנייר, לחיצה פותחת פרוסות. */
+  const grouped = filter === 'all';
+  const listRows = grouped ? groupBySymbol(pos) : pos;
+  const isGroup = p => !!p.children;
+  const multi = p => isGroup(p) && p.children.length > 1;
+  const columns = [
+      { key: 'symbol', label: 'נייר', render: p => (p.sub ? h('span', { class: 'muted sub-mark' }, '↳') : h('span', { class: 'sym' }, p.symbol)) },
+      { key: 'portfolio', label: 'תיק', render: p => h('span', { class: 'muted' },
+        multi(p) ? `${p.children.length} תיקים ▾` : isGroup(p) ? p.children[0].portfolio : p.portfolio) },
       { key: 'qty', label: 'כמות', num: true, render: p => num(fq(p.qty)) },
       { key: 'avg', label: 'עלות ממוצעת', num: true, render: p => num(usd(p.avgCost, { digits: 2 })) },
       { key: 'price', label: 'מחיר', num: true, render: p => liveCell(p, 'price') },
@@ -138,15 +145,33 @@ function draw(el, ctx, inv, market, live) {
       { key: 'pnl', label: 'רווח', num: true, render: p => liveCell(p, 'pnl') },
       { key: 'pnlPct', label: '%', num: true, render: p => liveCell(p, 'pnlPct') },
       { key: 'weight', label: 'משקל', num: true, render: p => num(pct(p.weight, { sign: false })) },
-    ],
-    rows: pos,
+  ];
+  /* פרוסות FIFO — תמיד של תיק אחד (פוזיציה אמיתית של המנוע). */
+  const toggleLots = (p, tr) => {
+    const next = tr.nextElementSibling;
+    if (next && next.classList.contains('detail')) { next.remove(); tr.classList.remove('expanded'); return; }
+    tr.parentElement.querySelectorAll('tr.detail').forEach(x => x.remove());
+    tr.parentElement.querySelectorAll('tr.expanded').forEach(x => x.classList.remove('expanded'));
+    tr.classList.add('expanded');
+    tr.after(h('tr', { class: 'detail' }, h('td', { colspan: String(columns.length) }, lotsPanel(p, inv))));
+  };
+  const subRow = c => {
+    const r = { ...c, sub: true };
+    const tr = h('tr', { class: 'sub clickable', dataset: { key: c.id } }, columns.map(col => h('td', { class: col.num ? 'num' : '' }, col.render ? col.render(r) : r[col.key])));
+    tr.addEventListener('click', e => { e.stopPropagation(); toggleLots(c, tr); });
+    return tr;
+  };
+  const tbl = table({
+    columns,
+    rows: listRows,
     onRow: (p, tr) => {
-      const next = tr.nextElementSibling;
-      if (next && next.classList.contains('detail')) { next.remove(); tr.classList.remove('expanded'); return; }
-      tr.parentElement.querySelectorAll('tr.detail').forEach(x => x.remove());
-      tr.parentElement.querySelectorAll('tr.expanded').forEach(x => x.classList.remove('expanded'));
-      tr.classList.add('expanded');
-      tr.after(h('tr', { class: 'detail' }, h('td', { colspan: '11' }, lotsPanel(p, inv))));
+      if (!multi(p)) { toggleLots(isGroup(p) ? p.children[0] : p, tr); return; }
+      const open = tr.classList.contains('open');
+      /* סוגרים את הפירוט של הנייר הזה (שורות תיק + פרוסות פתוחות) */
+      let n = tr.nextElementSibling;
+      while (n && (n.classList.contains('sub') || n.classList.contains('detail'))) { const x = n.nextElementSibling; n.remove(); n = x; }
+      tr.classList.toggle('open', !open);
+      if (!open) tr.after(...p.children.map(subRow));
     },
   });
 
@@ -155,7 +180,7 @@ function draw(el, ctx, inv, market, live) {
     strip, warn,
     h('div', { class: 'grid main-side' }, investChartPanel({ inv: filter === 'all' ? inv : { ...inv, rows }, market, height: 290 }), allocPanel),
     h('section', { class: 'panel' },
-      h('div', { class: 'panel-h' }, h('h2', null, `רשימת אחזקות · ${pos.length}`), h('span', { class: 'chart-note' }, `תנועה אחרונה במסד: ${day(inv.lastDate)}`)),
+      h('div', { class: 'panel-h' }, h('h2', null, grouped ? `רשימת אחזקות · ${listRows.length} ניירות · ${pos.length} פוזיציות` : `רשימת אחזקות · ${pos.length}`), h('span', { class: 'chart-note' }, `תנועה אחרונה במסד: ${day(inv.lastDate)}`)),
       h('div', { class: 'panel-b flush' }, tbl)));
 
   /* מחירים חיים: כל עדכון מחשב מחדש את הפוזיציות ומחליף רק את
@@ -171,7 +196,9 @@ function draw(el, ctx, inv, market, live) {
     const ns = buildStrip(next);
     strip.replaceWith(ns);
     strip = ns;
-    next.pos.forEach(p => ['price', 'change', 'value', 'pnl', 'pnlPct'].forEach(f => {
+    /* גם שורות הנייר המאוחדות וגם שורות התיק (אם פתוחות) */
+    const cells = filter === 'all' ? [...groupBySymbol(next.pos), ...next.pos] : next.pos;
+    cells.forEach(p => ['price', 'change', 'value', 'pnl', 'pnlPct'].forEach(f => {
       const cell = el.querySelector(`[data-live="${CSS.escape(`${p.id}|${f}`)}"]`);
       if (!cell) return;
       const fresh = liveCell(p, f);

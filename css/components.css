@@ -84,6 +84,10 @@ table.dense tbody tr:hover td { background: color-mix(in srgb, var(--accent-soft
 table.dense tr.clickable { cursor: pointer; }
 table.dense tr.expanded td { background: var(--accent-soft); }
 table.dense tr.detail td { white-space: normal; padding: var(--s3) var(--s4); background: var(--sunken); }
+/* שורת תיק בתוך נייר מאוחד (אחזקות · כל התיקים) */
+table.dense tr.sub td { background: var(--sunken); font-size: 12.5px; }
+table.dense tr.sub .sub-mark { padding-inline-start: 8px; }
+table.dense tr.open td { background: var(--accent-soft); }
 table.dense tr.total td { font-weight: 600; background: var(--sunken); border-top: 1px solid var(--line-strong); }
 
 /* ── גרפים ── */
