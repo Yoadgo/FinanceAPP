@@ -13,7 +13,7 @@ import { h, mount, num } from '../../ui/dom.js';
 import { emptyState, errorState, loading, kpi, table, note } from '../../ui/components.js';
 import { allocation, sparkline } from '../../ui/charts.js';
 import { usd, qty as fq, pct, day, dirClass } from '../../core/format.js';
-import { hrefOf } from '../../core/routes.js';
+import { hrefOf, stockHref } from '../../core/routes.js';
 import { loadInvest, loadMarket } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { lastCloses } from '../../engines/series.js';
@@ -230,7 +230,9 @@ function liveCell(p, f) {
 function lotsPanel(p, inv) {
   const buys = inv.rows.filter(r => r.Portfolio === p.portfolio && String(r.Symbol).toUpperCase() === p.symbol && r.subCategory === 'BUY_STOCK');
   return h('div', { style: { display: 'grid', gap: '8px', maxHeight: '340px', overflowY: 'auto' } },
-    h('div', { class: 'eyebrow' }, `${p.lots.length} פרוסות פתוחות · ${p.symbol} · ${p.portfolio}`),
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '8px' } },
+      h('span', { class: 'eyebrow' }, `${p.lots.length} פרוסות פתוחות · ${p.symbol} · ${p.portfolio}`),
+      h('a', { class: 'btn sm', href: stockHref(p.symbol) }, `כרטיס ${p.symbol} ←`)),
     table({
       columns: [
         { key: 'date', label: 'תאריך קנייה', render: l => num(day(l.date)) },

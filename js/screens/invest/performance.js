@@ -12,7 +12,7 @@
 import { h, mount, num } from '../../ui/dom.js';
 import { emptyState, errorState, loading, kpi, table, chip } from '../../ui/components.js';
 import { usd, pct, dirClass } from '../../core/format.js';
-import { hrefOf } from '../../core/routes.js';
+import { hrefOf, stockHref } from '../../core/routes.js';
 import { loadInvest, loadMarket } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { efficiency, verdictText } from '../../engines/efficiency.js';
@@ -90,6 +90,7 @@ function draw(el, inv, market) {
       tr.classList.add('expanded');
       tr.after(h('tr', { class: 'detail' }, h('td', { colspan: '9' }, h('div', { style: { display: 'grid', gap: '6px' } },
         h('b', null, verdictText(s, BENCHMARK)),
+        h('a', { class: 'btn sm', href: stockHref(s.symbol), style: { justifySelf: 'start' } }, `כרטיס ${s.symbol} — גרף, עסקאות ומה אם אמכור ←`),
         h('span', { class: 'small muted' }, `${s.slices} פרוסות הון · החזקה ממוצעת ${Math.round(s.capitalDays / Math.max(1, s.cost))} ימים · רווח גולמי ${usd(s.grossWin)} · הפסד גולמי ${usd(-s.grossLoss)} · תיקים: ${s.portfolios.join(', ')}`)))));
     },
   });

@@ -1,28 +1,31 @@
 /* ================================================================
-   JOURNAL — יומן מחקר. "למה קניתי, מתי אצא, והאם צדקתי".
-   (שלב 3, 30.9.2026. יועד בחר: תזה לנייר + ציר זמן; שדות: מחיר
-   יעד ותנאי יציאה.)
+   STOCK — כרטיס נייר. "מה עשיתי עם הנייר הזה, מה יצא לי, ומה יקרה
+   אם אמכור עכשיו". (יועד, 30.9.2026. כולל את יומן המחקר.)
 
    בצד: כל הניירות — מוחזקים קודם, עם סימן אם יש תזה.
    במרכז, לנייר שנבחר:
-     · פסק הדין מול IVV (מאותו מנוע של "ביצועים מול מדד")
-     · התזה הנוכחית: מחיר יעד וכמה נשאר אליו, תנאי יציאה
-     · טופס רשומה חדשה (תזה / עדכון / לקח)
-     · ציר זמן: הרשומות והעסקאות יחד — כך רואים מה חשבת כשקנית,
-       ומה קרה אחר כך.
-   נתונים: אוסף journal (store.js). טקסט נכנס כ-textContent בלבד.
+     · גרף סגירות עם נקודות כניסה (▲) ויציאה (▼) וקו העלות הממוצעת
+     · נטו על הנייר: ממומש + לא ממומש − עמלות, ומול IVV
+     · "אם אמכור עכשיו": עמלה משוערת, מס 25% פחות זיכוי פתוח, נשאר ביד
+     · סטטיסטיקות מסחר: כניסות, יציאות, % מרוויחות, החזקה ממוצעת
+     · התזה, רשומה חדשה, וציר זמן של רשומות ועסקאות
+   קישור ישיר: #/invest/stock/GOOGL. החישוב: engines/stock.js,
+   engines/journal.js, engines/efficiency.js. טקסט = textContent בלבד.
    ================================================================ */
 import { h, mount, num } from '../../ui/dom.js';
-import { emptyState, errorState, loading, chip, note } from '../../ui/components.js';
+import { emptyState, errorState, loading, chip, note, kpi } from '../../ui/components.js';
 import { toast } from '../../ui/toast.js';
-import { usd, pct, qty as fq, day, todayIso, dirClass } from '../../core/format.js';
-import { hrefOf } from '../../core/routes.js';
+import { usd, ils, pct, qty as fq, day, todayIso, dirClass } from '../../core/format.js';
+import { hrefOf, stockHref } from '../../core/routes.js';
 import { session } from '../../core/auth.js';
 import * as store from '../../core/store.js';
 import * as liveApi from '../../core/live.js';
 import { loadInvest, loadMarket } from './data.js';
 import { efficiency, verdictText } from '../../engines/efficiency.js';
 import { KINDS, normalizeEntry, currentThesis, timeline, targetGap, symbolsIndex } from '../../engines/journal.js';
+import { stockSummary, tradeMarkers, TAX_RATE } from '../../engines/stock.js';
+import { friction } from '../../engines/friction.js';
+import { tradeChart, legend } from '../../ui/charts.js';
 import { BENCHMARK } from '../../config.js';
 
 let selected = null;
@@ -31,6 +34,8 @@ let kind = 'thesis';
 let draft = { text: '', date: '', target: '', exit: '' };
 
 export async function render(el, ctx) {
+  const fromHash = decodeURIComponent(String(location.hash).split('/')[3] || '').toUpperCase();
+  if (/^[A-Z][A-Z0-9.]{0,9}$/.test(fromHash)) selected = fromHash;
   mount(el, head(), loading('card'), loading('table'));
   let inv, market, live, entries;
   try {
@@ -45,11 +50,19 @@ export async function render(el, ctx) {
   if (!selected || !index.find(s => s.symbol === selected)) selected = index[0].symbol;
   let eff = null;
   try { if (market.history[BENCHMARK]) eff = efficiency(inv.rows, market.history, { bench: BENCHMARK, fx: market.fx }); } catch (e) { eff = null; }
-  draw(el, ctx, { inv, market, live, entries, index, eff });
+  /* זיכוי מס פתוח השנה, לכל תיק (מגן המס) — בדולרים לפי שער היום */
+  const creditsUsd = {};
+  let creditNote = null;
+  try {
+    const fx = market.fx && market.fx.size ? market.fx : null;
+    const Y = friction(inv.rows, { fx }).years.find(y => y.year === todayIso().slice(0, 4));
+    if (Y) Y.portfolios.forEach(p => { if (p.unusedCredit > 0) { if (fx) creditsUsd[p.portfolio] = p.unusedCredit / fx.rateOn(todayIso()); else creditNote = 'יש זיכוי מס פתוח, אבל חסר שער דולר–שקל כדי לקזז אותו בהערכה.'; } });
+  } catch (e) { creditNote = 'הזיכוי הפתוח לא חושב (חסר שער דולר–שקל).'; }
+  draw(el, ctx, { inv, market, live, entries, index, eff, creditsUsd, creditNote });
 }
 
 function head() {
-  return h('div', { class: 'world-head' }, h('h1', null, 'יומן מחקר'), h('span', { class: 'question' }, 'למה קניתי, מתי אצא, והאם צדקתי'));
+  return h('div', { class: 'world-head' }, h('h1', null, 'ניירות'), h('span', { class: 'question' }, 'מה עשיתי עם הנייר, מה יצא לי, ומה אם אמכור עכשיו'));
 }
 
 function priceOf(sym, live, market) {
@@ -65,7 +78,12 @@ function draw(el, ctx, data) {
   const side = h('nav', { class: 'journal-list', 'aria-label': 'ניירות' },
     index.map(s => h('button', {
       type: 'button', class: 'journal-sym', 'aria-pressed': String(s.symbol === selected),
-      onclick: () => { if (s.symbol !== selected) draft = { text: '', date: '', target: '', exit: '' }; selected = s.symbol; draw(el, ctx, data); },
+      onclick: () => {
+        if (s.symbol !== selected) draft = { text: '', date: '', target: '', exit: '' };
+        selected = s.symbol;
+        history.replaceState(null, '', stockHref(s.symbol));      // קישור שאפשר לשתף, בלי טעינה מחדש
+        draw(el, ctx, data);
+      },
     },
     h('span', { class: 'sym' }, s.symbol),
     h('span', { class: 'small muted' }, s.qty > 0 ? `${fq(s.qty)} יח'` : 'נסגר'),
@@ -111,9 +129,75 @@ function main(el, ctx, data) {
   const tl = timeline(sym, entries, inv.rows);
   const tlList = tl.length ? h('ol', { class: 'timeline' }, tl.map(it => timelineItem(it, el, ctx))) : h('p', { class: 'small muted' }, 'אין עדיין אירועים.');
 
+  /* ── מספרים ── */
+  const S = stockSummary(sym, inv.rows, { price: px ? px.price : null, creditsUsd: data.creditsUsd });
+  const chartBox = h('div', { class: 'stock-chart' });
+  const hist = market.history[sym] || [];
+  const markers = tradeMarkers(sym, inv.rows);
+  const chartPart = hist.length > 1
+    ? h('div', null, chartBox, legend([
+      { label: 'סגירה', color: '--s-1' }, { label: '▲ קנייה', color: '--up' }, { label: '▼ מכירה', color: '--down' },
+      ...(S.qty > 0 ? [{ label: `עלות ממוצעת ${usd(S.avgCost, { digits: 2 })}`, color: '--fg-2', dashed: true }] : [])]))
+    : note('אין עדיין היסטוריית מחירים לנייר הזה, ולכן אין גרף. היא נמשכת במסך המיגרציה ("משיכת היסטוריה").', { kind: 'info' });
+  if (hist.length > 1) {
+    /* מאז שבוע לפני הכניסה הראשונה — לא 2022 כולה בשביל נייר שנקנה אתמול */
+    const from = S.firstDate ? new Date(Date.parse(S.firstDate) - 30 * 86400000).toISOString().slice(0, 10) : '';
+    const closes = hist.filter(x => x.date >= from);
+    requestAnimationFrame(() => tradeChart(chartBox, { closes: closes.length > 1 ? closes : hist, markers, avgCost: S.qty > 0 ? S.avgCost : null, height: 300 })
+      .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))));
+  }
+
+  const edge = effRow ? effRow.edge : null;
+  const strip = h('div', { class: 'strip' },
+    kpi({ label: 'נטו על הנייר', value: usd(S.net, { sign: true }), cls: dirClass(S.net), ctx: S.qty > 0 ? 'כולל מה שעדיין מוחזק, לפי המחיר עכשיו' : 'כל העסקאות נסגרו',
+      trace: { title: `נטו על ${sym}`, total: S.net, totalText: usd(S.net),
+        formula: 'רווח ממומש (מכירות, FIFO) + רווח לא ממומש (מה שמוחזק × המחיר עכשיו − העלות שלו) − כל העמלות ששולמו על הנייר.',
+        parts: [{ label: 'ממומש', valueText: usd(S.realized) }, { label: 'לא ממומש', valueText: usd(S.unrealized ?? 0) }, { label: 'עמלות', valueText: usd(-S.commissions) }],
+        partsSum: S.realized + (S.unrealized ?? 0) - S.commissions } }),
+    kpi({ label: 'ממומש', value: usd(S.realized, { sign: true }), size: 'sm', cls: dirClass(S.realized), ctx: `${S.closedTrades} מכירות` }),
+    kpi({ label: 'לא ממומש', value: S.qty > 0 ? usd(S.unrealized, { sign: true }) : '—', size: 'sm', cls: dirClass(S.unrealized),
+      ctx: S.qty > 0 ? `${fq(S.qty)} יח' · עלות ${usd(S.openCost)}` : 'אין אחזקה' }),
+    kpi({ label: 'עמלות', value: usd(S.commissions), size: 'sm', ctx: `${S.entries + S.exits} עסקאות` }),
+    kpi({ label: `מול ${BENCHMARK}`, value: edge === null ? '—' : usd(edge, { sign: true }), size: 'sm', cls: dirClass(edge),
+      ctx: effRow ? (effRow.worth ? 'שווה — הכה את המדד' : 'לא שווה — המדד היה עושה יותר') : 'דרושה היסטוריית מחירים' }));
+
+  const kv = (label, value, cls = '') => h('div', { class: 'kv' }, h('span', { class: 'muted' }, label), num(value, cls));
+  const N = S.sellNow;
+  const sellCard = h('div', { class: 'card', style: { display: 'grid', gap: '6px' } },
+    h('div', { class: 'card-title' }, 'אם אמכור עכשיו'),
+    N ? [
+      kv(`שווי שוק (${fq(S.qty)} × ${usd(px.price, { digits: 2 })})`, usd(N.value)),
+      kv(`עמלת מכירה משוערת${N.perPortfolio.length > 1 ? ` (${N.perPortfolio.length} תיקים)` : ''}`, usd(-N.fee)),
+      kv('רווח לפני מס', usd(N.gain, { sign: true }), dirClass(N.gain)),
+      kv(`מס רווח הון משוער (${Math.round(TAX_RATE * 100)}%)`, usd(-N.taxBefore)),
+      N.creditUsed > 0.005 ? kv('פחות זיכוי מס פתוח בתיק (הפסדים שמומשו השנה)', usd(N.creditUsed), 'up') : null,
+      h('hr', { class: 'sep' }),
+      kv('רווח אחרי מס ועמלה', usd(N.afterTax, { sign: true }), dirClass(N.afterTax)),
+      kv('נשאר ביד', usd(N.cashOut)),
+      kv('הנייר מההתחלה, אם אמכור עכשיו', usd(N.lifetimeAfterTax, { sign: true }), dirClass(N.lifetimeAfterTax)),
+      h('p', { class: 'small muted', style: { margin: 0 } }, 'הערכה: המס בפועל מחושב בשקלים וכולל את שינוי השער, והעמלה היא הממוצע של מכירות קודמות. זיכוי מס פתוח מקזז רק באותו תיק.'),
+      data.creditNote ? h('p', { class: 'small', style: { margin: 0 } }, data.creditNote) : null,
+    ] : h('p', { class: 'small muted' }, S.qty > 0 ? 'אין מחיר עדכני לנייר — אי אפשר להעריך.' : 'אין אחזקה פתוחה בנייר הזה.'));
+
+  const statsCard = h('div', { class: 'card', style: { display: 'grid', gap: '6px' } },
+    h('div', { class: 'card-title' }, 'סטטיסטיקות מסחר'),
+    kv('כניסות / יציאות', `${S.entries} / ${S.exits}`),
+    kv('מכירות מרוויחות', S.winRate === null ? '—' : `${S.wins} מתוך ${S.closedTrades} · ${pct(S.winRate * 100, { sign: false, digits: 0 })}`),
+    kv('החזקה ממוצעת עד מכירה', S.avgHoldDays === null ? '—' : `${Math.round(S.avgHoldDays)} ימים`),
+    kv('מחיר קנייה ממוצע', S.avgBuy === null ? '—' : usd(S.avgBuy, { digits: 2 })),
+    kv('מחיר מכירה ממוצע', S.avgSell === null ? '—' : usd(S.avgSell, { digits: 2 }), S.avgSell !== null && S.avgBuy !== null ? dirClass(S.avgSell - S.avgBuy) : ''),
+    kv('עמלה ממוצעת לעסקה', S.entries + S.exits ? usd(S.commissions / (S.entries + S.exits), { digits: 2 }) : '—'),
+    kv('פעיל מאז', S.firstDate ? day(S.firstDate) : '—'),
+    kv('תיקים', S.portfolios.join(', ') || '—'),
+    h('p', { class: 'small muted', style: { margin: 0 } }, 'מחירים ממוצעים מותאמים לפיצולים (מפרוסות ה-FIFO).'));
+
   return h('section', { class: 'panel' }, header,
     h('div', { class: 'panel-b', style: { display: 'grid', gap: '14px' } },
-      verdict, thesisCard, form(sym, px, el, ctx),
+      chartPart, strip,
+      h('div', { class: 'grid cols-2' }, sellCard, statsCard),
+      verdict,
+      h('div', { class: 'eyebrow' }, 'תזה ויומן'),
+      thesisCard, form(sym, px, el, ctx),
       h('div', { class: 'eyebrow' }, `ציר זמן · ${tl.length}`), tlList));
 }
 

@@ -11,7 +11,7 @@
 import { h, mount, num } from '../../ui/dom.js';
 import { emptyState, errorState, loading, kpi, table, note } from '../../ui/components.js';
 import { ils, usd, pct, day, todayIso } from '../../core/format.js';
-import { hrefOf } from '../../core/routes.js';
+import { hrefOf, stockHref } from '../../core/routes.js';
 import { loadInvest, loadMarket } from './data.js';
 import { friction, COSTS } from '../../engines/friction.js';
 
@@ -130,6 +130,7 @@ function draw(el, inv, market) {
       { key: 'eat', label: 'עמלות מתוך הרווח', num: true, render: s => num(s.realizedUsd > 0 ? pct((s.commissionUsd / s.realizedUsd) * 100, { sign: false, digits: 0 }) : '—') },
     ],
     rows: Y.symbols.slice(0, 25).map(s => ({ ...s, id: s.symbol })),
+    onRow: s => { location.hash = stockHref(s.symbol); },
   });
 
   const byPort = portfolio === 'all' && Y.portfolios.length > 1 ? h('section', { class: 'panel' },

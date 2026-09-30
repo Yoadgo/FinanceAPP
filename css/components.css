@@ -216,3 +216,9 @@ label.small { display: grid; gap: 4px; }
   .journal-list { position: static; max-height: none; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
   .timeline > li { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ── כרטיס נייר ── */
+.stock-chart { width: 100%; min-height: 300px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
+.kv > span:first-child { min-width: 0; }
+hr.sep { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }

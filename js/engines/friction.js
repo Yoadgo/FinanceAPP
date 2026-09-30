@@ -137,6 +137,7 @@ export function friction(rows, { fx = null } = {}) {
       if (raw === null) return;                       // חסר שער — הסכום המשולב כבר מקף
       const c = Math.max(0, raw);
       if (raw < 0) Yr.tax.unusedCredit += -raw;
+      p.unusedCredit = raw < 0 ? -raw : 0;
       p.cgTax.total = c; p.totalIls += c - raw;
       Yr.frictionIls += c - raw;
       clamped += c;

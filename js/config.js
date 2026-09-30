@@ -28,6 +28,13 @@ export const HOUSEHOLD_ID = 'main';
    נבדק: נגיש מדפדפן מכל אתר (CORS), 1MB להיסטוריה המלאה, 1.3KB לשורות המחיר בלבד. */
 export const PRICES_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTeeVqldRo9zjBKCnO70WmQVoqKRVbqMVEr92z08j6gcJ5CEtAsMvRz10QT2BbWWlU7pwwylTWA44NH/pub?output=csv';
 
+/* היסטוריית הסגירות — טאב נפרד באותו גיליון, עם **ערכים קבועים** (לא נוסחאות).
+   למה (30.9.2026): גוגל לא חושפת היסטוריית GOOGLEFINANCE בפרסום — ה-CSV המפורסם
+   החזיר "Loading..." בכל עמודות ההיסטוריה. לכן ההיסטוריה עד 29.9.2026 הועתקה פעם
+   אחת כערכים לטאב הזה, ומכאן והלאה האפליקציה שומרת את סגירת כל יום בעצמה
+   (engines/closes.js). */
+export const HISTORY_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTeeVqldRo9zjBKCnO70WmQVoqKRVbqMVEr92z08j6gcJ5CEtAsMvRz10QT2BbWWlU7pwwylTWA44NH/pub?gid=2123532702&single=true&output=csv';
+
 /* מדד ברירת המחדל לאלפא — הוחלט 29.9.2026. */
 export const BENCHMARK = 'IVV';
 

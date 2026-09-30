@@ -63,6 +63,44 @@ export async function timeChart(el, { series, format = v => v.toFixed(0), height
   return chart;
 }
 
+/* גרף נייר: קו סגירות + נקודות כניסה (▲ ירוק, מתחת) ויציאה (▼ אדום,
+   מעל) + קו מקווקו של העלות הממוצעת של מה שעדיין מוחזק.
+   closes: [{ date, close }] · markers: [{ date, side, qty, price }]
+   נקודה בתאריך שאין לו סגירה (סוף שבוע, חור) נצמדת לסגירה הקודמת. */
+export async function tradeChart(el, { closes, markers = [], avgCost = null, height = 300 }) {
+  const L = await loadCharts();
+  el.style.height = `${height}px`;
+  const grid = token('--grid'), muted = token('--muted'), fg = token('--fg-2');
+  const fmt = v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const chart = L.createChart(el, {
+    autoSize: true,
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor: muted, fontFamily: token('--mono') || 'monospace', fontSize: 11 },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: grid, scaleMargins: { top: 0.1, bottom: 0.08 } },
+    timeScale: { borderColor: grid, timeVisible: false, rightOffset: 4 },
+    crosshair: { mode: 0, vertLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') }, horzLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') } },
+    localization: { priceFormatter: fmt, locale: 'en-US' },
+    handleScale: { axisPressedMouseMove: false },
+  });
+  const line = token('--s-1') || '#2563eb';
+  const ser = chart.addSeries(L.AreaSeries, { lineColor: line, topColor: hexA(line, 0.16), bottomColor: hexA(line, 0), lineWidth: 2, priceLineVisible: false, lastValueVisible: true, priceFormat: { type: 'custom', formatter: fmt } });
+  const data = closes.map(c => ({ time: c.date, value: c.close }));
+  ser.setData(data);
+  const times = data.map(d => d.time);
+  const snap = date => { let t = null; for (const x of times) { if (x <= date) t = x; else break; } return t || times[0]; };
+  const up = token('--up'), down = token('--down');
+  if (markers.length && L.createSeriesMarkers) {
+    const ms = markers.map(m => ({
+      time: snap(m.date), position: m.side === 'buy' ? 'belowBar' : 'aboveBar', color: m.side === 'buy' ? up : down,
+      shape: m.side === 'buy' ? 'arrowUp' : 'arrowDown', text: `${m.side === 'buy' ? '+' : '−'}${Math.round(m.qty)}`,
+    })).sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    L.createSeriesMarkers(ser, ms);
+  }
+  if (avgCost > 0) ser.createPriceLine({ price: avgCost, color: fg, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'עלות' });
+  chart.timeScale().fitContent();
+  return chart;
+}
+
 /* מקרא לגרף — HTML ולא בתוך הקנבס, כדי שיהיה בעברית ונגיש. */
 export function legend(items) {
   return h('div', { class: 'legend' }, items.map(i =>

@@ -18,7 +18,7 @@ export const WORLDS = [
       { id: 'performance', label: 'ביצועים מול מדד', stage: 3, load: () => import('../screens/invest/performance.js') },
       { id: 'transactions', label: 'תנועות', stage: 3, load: () => import('../screens/invest/transactions.js') },
       { id: 'tax', label: 'מס ועמלות', stage: 3, load: () => import('../screens/invest/tax.js') },
-      { id: 'journal', label: 'יומן מחקר', stage: 3, load: () => import('../screens/invest/journal.js') },
+      { id: 'stock', label: 'ניירות ויומן', stage: 3, load: () => import('../screens/invest/stock.js') },
       { id: 'planner', label: 'תכנון קנייה', stage: 3 },
     ],
   },
@@ -64,3 +64,6 @@ export function parseHash(hash) {
 }
 
 export const hrefOf = (worldId, subId) => `#/${worldId}${subId ? '/' + subId : ''}`;
+
+/* כרטיס נייר: #/invest/stock/GOOGL */
+export const stockHref = sym => `#/invest/stock/${encodeURIComponent(sym)}`;
