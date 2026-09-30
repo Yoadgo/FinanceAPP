@@ -46,7 +46,7 @@ function startShell(user, onSignOut) {
 
   const avatar = user.photo ? h('img', { src: user.photo, alt: '', referrerpolicy: 'no-referrer' }) : null;
   const userChip = h('div', { class: 'userchip' }, avatar, h('span', { class: 'name' }, user.name),
-    h('button', { class: 'btn sm ghost', onclick: onSignOut }, 'יציאה'));
+    h('button', { class: 'btn sm ghost', onclick: async () => { try { (await import('./core/live.js')).stop(); } catch (e) { /* לא קריטי */ } onSignOut(); } }, 'יציאה'));
 
   const ticker = h('div', { class: 'ticker', 'aria-label': 'מדדים ומחירים' }, h('span', { class: 'tick note' }, 'טוען מחירים…'));
   viewEl = h('main', { class: 'view', id: 'view', tabindex: '-1' });
@@ -103,26 +103,52 @@ async function route() {
   }
 }
 
-/* שורת המדדים: המדד, הנאסד"ק, הדולר, ואז האחזקות. המחיר והשינוי היומי
-   מגיליון המחירים; בלי גיליון — אומרים את זה, לא מציגים מספרים ריקים. */
+/* שורת המדדים: המדד, הנאסד"ק, הדולר, ואז שאר הניירות. מנויה לשירות
+   המחירים החיים (core/live.js): כל עדכון מצייר אותה מחדש, ומחיר שזז
+   מהבהב בירוק/אדום. בלי גיליון — אומרים את זה, לא מציגים מספרים ריקים. */
 const TICKER_FIRST = ['IVV', 'QQQ'];
+const lastPx = {};
+let tickerUnsub = null;
 async function fillTicker(el) {
   try {
-    const { latest } = await import('./core/market.js');
-    const { data } = await latest();
-    if (!data || !data.prices) { mount(el, h('span', { class: 'tick note' }, 'מחירי שוק עוד לא מחוברים · גיליון המחירים ייפרס בשלב 3')); return; }
-    const syms = [...TICKER_FIRST.filter(s => data.prices[s]), ...Object.keys(data.prices).filter(s => !TICKER_FIRST.includes(s)).sort()];
-    const tick = (sym, px, ch, digits = 2) => h('span', { class: 'tick' },
-      h('span', { class: 'sym' }, sym),
-      h('span', { class: 'px', dir: 'ltr' }, px.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })),
-      ch === null ? null : h('span', { class: `ch ${ch > 0 ? 'up' : ch < 0 ? 'down' : ''}`, dir: 'ltr' }, `${ch > 0 ? '▲' : ch < 0 ? '▼' : ''} ${Math.abs(ch).toFixed(2)}%`));
-    const items = syms.slice(0, 2).map(s => tick(s, data.prices[s].price, data.prices[s].changePct));
-    if (data.fx && data.fx.USDILS) items.push(tick('USD/ILS', data.fx.USDILS.rate, null, 3));
-    syms.slice(2).forEach(s => items.push(tick(s, data.prices[s].price, data.prices[s].changePct)));
-    mount(el, ...items, h('span', { class: 'asof' }, `נכון ל-${String(data.asOf || '').split('-').reverse().join('.')}`));
+    const live = await import('./core/live.js');
+    const { SESSION_LABEL } = await import('./engines/marketHours.js');
+    if (tickerUnsub) tickerUnsub();
+    tickerUnsub = live.subscribe(snap => drawTicker(el, snap, SESSION_LABEL));
   } catch (e) {
     mount(el, h('span', { class: 'tick note' }, 'המחירים לא נטענו'));
   }
+}
+
+function drawTicker(el, snap, SESSION_LABEL) {
+  const data = snap.data;
+  if (!data || !data.prices || !Object.keys(data.prices).length) {
+    mount(el, h('span', { class: 'tick note' }, snap.refreshError ? `המחירים לא נטענו · ${snap.refreshError}` : 'טוען מחירים…'));
+    return;
+  }
+  const syms = [...TICKER_FIRST.filter(s => data.prices[s]), ...Object.keys(data.prices).filter(s => !TICKER_FIRST.includes(s)).sort()];
+  const tick = (sym, px, ch, digits = 2, src) => {
+    const prev = lastPx[sym];
+    lastPx[sym] = px;
+    const flash = prev && px !== prev ? (px > prev ? ' flash-up' : ' flash-down') : '';
+    return h('span', { class: `tick${flash}${src === 'live' ? ' is-live' : ''}` },
+      h('span', { class: 'sym' }, sym),
+      h('span', { class: 'px', dir: 'ltr' }, px.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })),
+      ch === null || ch === undefined ? null : h('span', { class: `ch ${ch > 0 ? 'up' : ch < 0 ? 'down' : ''}`, dir: 'ltr' }, `${ch > 0 ? '▲' : ch < 0 ? '▼' : ''} ${Math.abs(ch).toFixed(2)}%`));
+  };
+  const P = s => data.prices[s];
+  const items = syms.slice(0, 2).map(s => tick(s, P(s).price, P(s).changePct, 2, P(s).src));
+  if (data.fx && data.fx.USDILS) items.push(tick('USD/ILS', data.fx.USDILS.rate, null, 3));
+  syms.slice(2).forEach(s => items.push(tick(s, P(s).price, P(s).changePct, 2, P(s).src)));
+
+  /* מצב המקור: חי (Finnhub) / מושהה / גיליון בלבד */
+  const liveOn = snap.status === 'live' && snap.session === 'open';
+  const t = snap.lastQuoteAt ? new Date(snap.lastQuoteAt).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+  const state = liveOn
+    ? h('span', { class: 'asof live', title: 'מחירים בזמן אמת מ-Finnhub' }, h('i', { class: 'live-dot' }), `חי · ${t}`)
+    : h('a', { class: 'asof', href: '#/ingest/prices', title: 'מקורות מחיר' },
+      snap.session === 'open' ? (snap.hasKey ? (snap.error || 'ממתין לעדכון') : 'עיכוב ~20 דק׳ · לחיבור זמן אמת') : `${SESSION_LABEL[snap.session]} · נכון ל-${String(data.asOf || '').split('-').reverse().join('.')}`);
+  mount(el, ...items, state);
 }
 
 /* מסך שעוד לא נבנה: אומר מה יהיה כאן ובאיזה שלב. */

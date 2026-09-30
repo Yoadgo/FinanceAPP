@@ -175,3 +175,11 @@ table.dense tr.total td { font-weight: 600; background: var(--sunken); border-to
 .verdict.bad .mark { background: var(--down-soft); color: var(--down); }
 .verdict b { font-size: 15px; }
 .verdict p { font-size: 13px; color: var(--fg-2); }
+
+/* מחיר חי — הבהוב שורה כשהמחיר זז, ונקודה קטנה ליד מחיר בזמן אמת */
+table.dense tr.flash-up td { animation: row-up 1.4s ease-out; }
+table.dense tr.flash-down td { animation: row-down 1.4s ease-out; }
+@keyframes row-up { from { background: var(--up-soft); } to { background: transparent; } }
+@keyframes row-down { from { background: var(--down-soft); } to { background: transparent; } }
+.num.is-live::after { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--up); margin-inline-start: 5px; vertical-align: middle; }
+@media (prefers-reduced-motion: reduce) { table.dense tr.flash-up td, table.dense tr.flash-down td { animation: none; } }

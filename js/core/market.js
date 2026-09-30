@@ -18,7 +18,9 @@ import { docsFromHistory } from '../engines/series.js';
 import { yearDocsFromSeries } from '../engines/fx.js';
 import { todayIso } from './format.js';
 
-const FRESH_HOURS = 6;
+/* כמה זמן תמונת המחירים נחשבת עדכנית. בשעות המסחר live.js מבקש 5
+   דקות; מחוצה להן 6 שעות (אין מה לרענן). */
+const FRESH_MIN_DEFAULT = 360;
 
 async function fetchSheet(latestOnly) {
   if (!PRICES_URL) throw new Error('כתובת גיליון המחירים עוד לא הוגדרה');
@@ -30,10 +32,10 @@ async function fetchSheet(latestOnly) {
 
 /* המחירים האחרונים. מרענן אם ישן, ולא נכשל בגלל זה: אם הגיליון לא
    עונה — מוחזר המחיר האחרון הידוע + הסיבה. */
-export async function latest() {
+export async function latest({ maxAgeMin = FRESH_MIN_DEFAULT } = {}) {
   const cached = await store.get('market', 'latest');
-  const age = cached && cached.fetchedAt ? (Date.now() - Date.parse(cached.fetchedAt)) / 3600000 : Infinity;
-  if (!PRICES_URL || age < FRESH_HOURS) return { data: cached, refreshError: PRICES_URL ? null : 'גיליון המחירים עוד לא מחובר' };
+  const age = cached && cached.fetchedAt ? (Date.now() - Date.parse(cached.fetchedAt)) / 60000 : Infinity;
+  if (!PRICES_URL || age < maxAgeMin) return { data: cached, refreshError: PRICES_URL ? null : 'גיליון המחירים עוד לא מחובר' };
   try {
     const p = await fetchSheet(true);
     if (!Object.keys(p.latest).length) throw new Error(p.problems[0] || 'גיליון המחירים ריק');

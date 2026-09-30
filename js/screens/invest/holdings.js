@@ -18,7 +18,7 @@ import { loadInvest, loadMarket } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { lastCloses } from '../../engines/series.js';
 import { efficiency } from '../../engines/efficiency.js';
-import * as marketApi from '../../core/market.js';
+import * as liveApi from '../../core/live.js';
 import { BENCHMARK } from '../../config.js';
 
 let filter = 'all';
@@ -28,7 +28,7 @@ export async function render(el, ctx) {
   mount(el, head(ctx), loading('kpis'), loading('card'), loading('table'));
   let inv, market, live;
   try {
-    [inv, market, live] = await Promise.all([loadInvest(), loadMarket(), marketApi.latest()]);
+    [inv, market, live] = await Promise.all([loadInvest(), loadMarket(), liveApi.ready()]);
   } catch (e) {
     mount(el, head(ctx), errorState({ error: e, onRetry: () => render(el, ctx) }));
     return;
@@ -50,7 +50,7 @@ function head(ctx) {
 
 function priceOf(sym, live, market) {
   const p = live && live.data && live.data.prices && live.data.prices[sym];
-  if (p && isFinite(p.price)) return { price: p.price, asOf: p.asOf, change: p.changePct };
+  if (p && isFinite(p.price)) return { price: p.price, asOf: p.asOf, change: p.changePct, src: p.src };
   const hist = market.history[sym];
   if (hist && hist.length) {
     const lastRow = hist[hist.length - 1], prev = hist[hist.length - 2];
@@ -59,12 +59,12 @@ function priceOf(sym, live, market) {
   return null;
 }
 
-function draw(el, ctx, inv, market, live) {
-  const rows = filter === 'all' ? inv.rows : inv.rows.filter(r => r.Portfolio === filter);
+/* הפוזיציות עם המחיר הנוכחי. נקרא בכל ציור, וגם בכל עדכון מחיר חי. */
+function computePos(inv, market, live) {
   const pos = inv.positions.filter(p => filter === 'all' || p.portfolio === filter).map(p => {
     const pr = priceOf(p.symbol, live, market);
     const value = pr ? p.qty * pr.price : null;
-    return { ...p, id: `${p.portfolio}|${p.symbol}`, price: pr ? pr.price : null, priceAsOf: pr && pr.asOf, change: pr ? pr.change : null,
+    return { ...p, id: `${p.portfolio}|${p.symbol}`, price: pr ? pr.price : null, priceAsOf: pr && pr.asOf, change: pr ? pr.change : null, priceSrc: pr && pr.src,
       value, pnl: value === null ? null : value - p.totalCost, spark: lastCloses(market.history[p.symbol]) };
   });
   const totalCost = pos.reduce((s, p) => s + p.totalCost, 0);
@@ -72,6 +72,14 @@ function draw(el, ctx, inv, market, live) {
   const totalValue = allPriced ? pos.reduce((s, p) => s + p.value, 0) : null;
   pos.forEach(p => { p.weight = totalValue ? (p.value / totalValue) * 100 : (p.totalCost / totalCost) * 100; });
   pos.sort((a, b) => (b.value ?? b.totalCost) - (a.value ?? a.totalCost));
+  return { pos, totalCost, allPriced, totalValue };
+}
+
+let unsubLive = null;
+
+function draw(el, ctx, inv, market, live) {
+  const rows = filter === 'all' ? inv.rows : inv.rows.filter(r => r.Portfolio === filter);
+  const { pos, totalCost, allPriced, totalValue } = computePos(inv, market, live);
   const realized = pos.reduce((s, p) => s + p.realizedPnl, 0);
 
   let eff = null;
@@ -80,6 +88,7 @@ function draw(el, ctx, inv, market, live) {
   const filters = h('div', { class: 'seg', role: 'group', 'aria-label': 'תיק' },
     ['all', ...inv.portfolios].map(p => h('button', { type: 'button', 'aria-pressed': String(filter === p), onclick: () => { filter = p; draw(el, ctx, inv, market, live); } }, p === 'all' ? 'כל התיקים' : p)));
 
+  const buildStrip = ({ pos, totalCost, allPriced, totalValue }) => {
   const costTrace = {
     title: 'עלות האחזקות הפתוחות', total: totalCost, totalText: usd(totalCost),
     formula: 'סכום על כל הפוזיציות הפתוחות: כמות בכל פרוסת FIFO פתוחה × מחיר הקנייה שלה. עמלות לא בעלות — הן נספרות בנפרד.',
@@ -101,6 +110,9 @@ function draw(el, ctx, inv, market, live) {
     kpi({ label: 'רווח ממומש', value: usd(realized, { sign: true }), size: 'sm', cls: dirClass(realized), ctx: 'מפרוסות שנסגרו' }),
     kpi({ label: `יתרון מול ${BENCHMARK}`, value: eff ? usd(eff.total.edge, { sign: true }) : '—', size: 'sm', cls: eff ? dirClass(eff.total.edge) : '',
       ctx: eff ? (eff.total.worth ? 'הבחירות הכו את המדד' : 'המדד היה עושה יותר') : 'דרוש מחיר היסטורי של המדד' }));
+  return strip;
+  };
+  let strip = buildStrip({ pos, totalCost, allPriced, totalValue });
 
   const allocSeg = h('div', { class: 'seg', role: 'group', 'aria-label': 'חלוקה לפי' },
     [['symbol', 'נייר'], ['portfolio', 'תיק']].map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(allocBy === k), onclick: () => { allocBy = k; draw(el, ctx, inv, market, live); } }, l)));
@@ -119,12 +131,12 @@ function draw(el, ctx, inv, market, live) {
       { key: 'portfolio', label: 'תיק', render: p => h('span', { class: 'muted' }, p.portfolio) },
       { key: 'qty', label: 'כמות', num: true, render: p => num(fq(p.qty)) },
       { key: 'avg', label: 'עלות ממוצעת', num: true, render: p => num(usd(p.avgCost, { digits: 2 })) },
-      { key: 'price', label: 'מחיר', num: true, render: p => num(p.price === null ? '—' : usd(p.price, { digits: 2 })) },
-      { key: 'change', label: 'יומי', num: true, render: p => num(p.change === null || p.change === undefined ? '—' : pct(p.change, { digits: 2 }), dirClass(p.change)) },
+      { key: 'price', label: 'מחיר', num: true, render: p => liveCell(p, 'price') },
+      { key: 'change', label: 'יומי', num: true, render: p => liveCell(p, 'change') },
       { key: 'spark', label: '90 יום', render: p => (p.spark.length > 1 ? sparkline(p.spark) : h('span', { class: 'muted' }, '—')) },
-      { key: 'value', label: 'שווי', num: true, render: p => num(p.value === null ? '—' : usd(p.value)) },
-      { key: 'pnl', label: 'רווח', num: true, render: p => num(p.pnl === null ? '—' : usd(p.pnl, { sign: true }), dirClass(p.pnl)) },
-      { key: 'pnlPct', label: '%', num: true, render: p => num(p.pnl === null ? '—' : pct((p.pnl / p.totalCost) * 100), dirClass(p.pnl)) },
+      { key: 'value', label: 'שווי', num: true, render: p => liveCell(p, 'value') },
+      { key: 'pnl', label: 'רווח', num: true, render: p => liveCell(p, 'pnl') },
+      { key: 'pnlPct', label: '%', num: true, render: p => liveCell(p, 'pnlPct') },
       { key: 'weight', label: 'משקל', num: true, render: p => num(pct(p.weight, { sign: false })) },
     ],
     rows: pos,
@@ -145,6 +157,46 @@ function draw(el, ctx, inv, market, live) {
     h('section', { class: 'panel' },
       h('div', { class: 'panel-h' }, h('h2', null, `רשימת אחזקות · ${pos.length}`), h('span', { class: 'chart-note' }, `תנועה אחרונה במסד: ${day(inv.lastDate)}`)),
       h('div', { class: 'panel-b flush' }, tbl)));
+
+  /* מחירים חיים: כל עדכון מחשב מחדש את הפוזיציות ומחליף רק את
+     רצועת המדדים ואת תאי המחיר/שווי/רווח — הגרף והטבלה לא נבנים
+     מחדש, ופאנל פרוסות פתוח נשאר פתוח. */
+  liveApi.prioritize(pos.map(p => p.symbol));
+  if (unsubLive) unsubLive();
+  let first = true;
+  unsubLive = liveApi.subscribe(snap => {
+    if (first) { first = false; return; }            // התמונה הראשונה כבר מצוירת
+    if (!el.isConnected || !strip.isConnected) { if (unsubLive) { unsubLive(); unsubLive = null; } return; }
+    const next = computePos(inv, market, snap);
+    const ns = buildStrip(next);
+    strip.replaceWith(ns);
+    strip = ns;
+    next.pos.forEach(p => ['price', 'change', 'value', 'pnl', 'pnlPct'].forEach(f => {
+      const cell = el.querySelector(`[data-live="${CSS.escape(`${p.id}|${f}`)}"]`);
+      if (!cell) return;
+      const fresh = liveCell(p, f);
+      if (f === 'price' && cell.textContent !== fresh.textContent) {
+        const tr = cell.closest('tr');
+        const up = (p.price || 0) >= Number(cell.dataset.v || 0);
+        if (tr) { tr.classList.remove('flash-up', 'flash-down'); void tr.offsetWidth; tr.classList.add(up ? 'flash-up' : 'flash-down'); }
+      }
+      cell.replaceWith(fresh);
+    }));
+  });
+}
+
+/* תא שמתעדכן חי. data-live מזהה אותו, data-v שומר את הערך הקודם. */
+function liveCell(p, f) {
+  let text, cls = '';
+  if (f === 'price') text = p.price === null ? '—' : usd(p.price, { digits: 2 });
+  else if (f === 'change') { text = p.change === null || p.change === undefined ? '—' : pct(p.change, { digits: 2 }); cls = dirClass(p.change); }
+  else if (f === 'value') text = p.value === null ? '—' : usd(p.value);
+  else if (f === 'pnl') { text = p.pnl === null ? '—' : usd(p.pnl, { sign: true }); cls = dirClass(p.pnl); }
+  else { text = p.pnl === null ? '—' : pct((p.pnl / p.totalCost) * 100); cls = dirClass(p.pnl); }
+  const n = num(text, `${cls}${p.priceSrc === 'live' && f === 'price' ? ' is-live' : ''}`.trim());
+  n.dataset.live = `${p.id}|${f}`;
+  if (f === 'price' && p.price !== null) n.dataset.v = String(p.price);
+  return n;
 }
 
 /* פרוסות FIFO פתוחות + שורות המקור שלהן */

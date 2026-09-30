@@ -48,6 +48,7 @@ export const WORLDS = [
       { id: 'upload', label: 'גרירה ואישור', stage: 4, load: () => import('../screens/ingest/upload.js') },
       { id: 'log', label: 'יומן קליטות', stage: 4, load: () => import('../screens/ingest/log.js') },
       { id: 'migrate', label: 'מיגרציה מהגיליון', stage: 2, load: () => import('../screens/ingest/migrate.js') },
+      { id: 'prices', label: 'מקורות מחיר', stage: 3, load: () => import('../screens/ingest/prices.js') },
     ],
   },
 ];
