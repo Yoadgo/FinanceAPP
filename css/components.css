@@ -187,3 +187,32 @@ table.dense tr.flash-down td { animation: row-down 1.4s ease-out; }
 @keyframes row-down { from { background: var(--down-soft); } to { background: transparent; } }
 .num.is-live::after { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--up); margin-inline-start: 5px; vertical-align: middle; }
 @media (prefers-reduced-motion: reduce) { table.dense tr.flash-up td, table.dense tr.flash-down td { animation: none; } }
+
+/* ── שדות קלט (יומן מחקר, קליטה) ── */
+input[type="text"], input[type="number"], input[type="date"], textarea {
+  width: 100%; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-mid);
+  background: var(--card); font-size: 13.5px; line-height: 1.5;
+}
+input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+input[type="date"] { width: auto; font-family: var(--mono); }
+textarea { resize: vertical; min-height: 72px; }
+label.small { display: grid; gap: 4px; }
+
+/* ── יומן מחקר ── */
+.journal { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: var(--s4); align-items: start; }
+.journal-list { display: grid; gap: 4px; max-height: 75vh; overflow-y: auto; position: sticky; top: var(--s3); }
+.journal-sym { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-mid); background: var(--card); cursor: pointer; text-align: start; }
+.journal-sym[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.journal-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-inline-start: 2px solid var(--line); }
+.timeline > li { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 8px 12px; position: relative; }
+.timeline > li::before { content: ''; position: absolute; inset-inline-start: -6px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
+.timeline > li.tl-trade.buy::before { background: var(--up); }
+.timeline > li.tl-trade.sell::before { background: var(--down); }
+.timeline > li.tl-note::before { background: var(--accent); }
+.timeline > li.tl-note { background: var(--sunken); border-radius: var(--r-mid); margin: 4px 0; }
+@media (max-width: 760px) {
+  .journal { grid-template-columns: 1fr; }
+  .journal-list { position: static; max-height: none; grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .timeline > li { grid-template-columns: 1fr; gap: 2px; }
+}
