@@ -15,13 +15,14 @@ import { planImport, importRecord } from '../../engines/ingestPlan.js';
 import * as store from '../../core/store.js';
 import { clearSpendCache } from '../spend/data.js';
 import { hrefOf } from '../../core/routes.js';
+import { isIbiSheet } from '../../engines/ibiImport.js';
 
 export async function render(el, ctx) {
   const status = h('div');
   const input = h('input', { id: 'up-file', type: 'file', accept: '.xls,.xlsx' });
   const zone = h('label', { class: 'dropzone', for: 'up-file' },
     h('b', null, 'לגרור לכאן קובץ, או ללחוץ לבחירה'),
-    h('span', { class: 'small muted' }, 'פירוט אשראי של הבינלאומי (xls) או דוח תנועות עו"ש (xlsx). הקובץ נקרא בדפדפן בלבד.'),
+    h('span', { class: 'small muted' }, 'פירוט אשראי של הבינלאומי (xls), דוח תנועות עו"ש (xlsx), או ייצוא תנועות מאיביאי (data N.xlsx). הקובץ נקרא בדפדפן בלבד.'),
     input);
   const go = f => f && handle(f, status);
   input.addEventListener('change', () => go(input.files[0]));
@@ -38,9 +39,15 @@ export async function render(el, ctx) {
 async function handle(file, status) {
   mount(status, loading('card'));
   let wb, ctxData;
-  try {
-    [wb, ctxData] = await Promise.all([readWorkbookFile(file), loadContext()]);
-  } catch (e) { mount(status, errorState({ title: 'הקובץ לא נקרא', error: e })); return; }
+  try { wb = await readWorkbookFile(file); }
+  catch (e) { mount(status, errorState({ title: 'הקובץ לא נקרא', error: e })); return; }
+
+  /* ייצוא איביאי — זרימה נפרדת (בחירת תיק, השוואה לתנועות הקיימות). */
+  const ibi = wb.sheets.find(sh => isIbiSheet(sh.values));
+  if (ibi) { const { showIbi } = await import('./ibi.js'); await showIbi(status, wb, ibi.values); return; }
+
+  try { ctxData = await loadContext(); }
+  catch (e) { mount(status, errorState({ title: 'הנתונים הקיימים לא נקראו', error: e })); return; }
 
   /* הגיליון הראשון שמזוהה. בקבצי הבינלאומי יש גיליון אחד. */
   let plan = null;

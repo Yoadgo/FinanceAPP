@@ -77,14 +77,21 @@ function draw(el, ctx) {
     picker('mg-rules', S.rulesName || 'Rules.csv', S.rules ? `${S.rules.length} כללים` : 'רשות', (n, t) => { S.rulesName = n; S.rules = parseRules(t); redraw(); }));
 
   const blocks = [head(), h('div', { class: 'card', style: { display: 'grid', gap: '12px' } }, h('span', { class: 'eyebrow' }, 'איך'), steps), pickers];
-  if (S.existing) blocks.push(note(`במסד כבר יש ${S.existing.toLocaleString('en-US')} תנועות. הרצה חוזרת בטוחה: אותה שורה נכתבת על אותו מסמך.`, { kind: 'info' }));
+  /* נעילה (30.9): אחרי שהתנועות הועברו, המקור שלהן הוא קבצי איביאי ולא
+     הגיליון. הרצה חוזרת של חלק התנועות הייתה (1) מחזירה לחיים שורות
+     שביטלת, (2) מחזירה אומדני מס ישנים, ו-(3) משכפלת שורות שנקלטו
+     מאיביאי — כי הגיליון והקליטה בונים את המזהה אחרת. השערים והכללים
+     עדיין נכתבים. */
+  if (S.existing) blocks.push(note(`במסד כבר יש ${S.existing.toLocaleString('en-US')} תנועות, ולכן חלק התנועות נעול: מעכשיו הן נכנסות רק דרך קליטת קובץ איביאי. שערים וכללים עדיין נכתבים מכאן.`, { kind: 'info' }));
 
   if (S.tx) blocks.push(txReport(S.tx));
   if (S.fx) blocks.push(h('div', { class: 'card', style: { display: 'grid', gap: '10px' } },
     h('div', { class: 'card-title' }, 'שערי דולר–שקל'), checksList(S.fx.checks),
     h('div', { class: 'small muted' }, `${day(S.fx.first)} → ${day(S.fx.last)}`)));
 
-  const ready = S.tx && S.tx.checks.every(c => c.pass) && (!S.fx || S.fx.checks.every(c => c.pass));
+  const txLocked = S.existing > 0;
+  const ready = txLocked ? (S.fx && S.fx.checks.every(c => c.pass))
+    : (S.tx && S.tx.checks.every(c => c.pass) && (!S.fx || S.fx.checks.every(c => c.pass)));
   const btn = h('button', { class: 'btn primary', disabled: ready ? null : true }, 'כתיבה למסד');
   const progress = h('span', { class: 'small muted' });
   btn.addEventListener('click', () => write(btn, progress, redraw));
@@ -197,7 +204,8 @@ function summaryLine() {
   const rules = S.rules ? `${S.rules.length} כללים מהגיליון` : '30 כללי זרע';
   const years = S.fx ? yearDocsFromSeries(S.fx.series).length : 0;
   const fx = S.fx ? ` · ${S.fx.series.length.toLocaleString('en-US')} שערים ב-${years} מסמכי שנה` : '';
-  return `ייכתבו: ${S.tx.items.length.toLocaleString('en-US')} תנועות${fx} · ${rules}. עלות משוערת: ${(S.tx.items.length + years + (S.rules ? S.rules.length : 30)).toLocaleString('en-US')} כתיבות מתוך 20,000 ביום.`;
+  const n = S.existing > 0 || !S.tx ? 0 : S.tx.items.length;       // נעול → 0 תנועות
+  return `ייכתבו: ${n.toLocaleString('en-US')} תנועות${fx} · ${rules}. עלות משוערת: ${(n + years + (S.rules ? S.rules.length : 30)).toLocaleString('en-US')} כתיבות מתוך 20,000 ביום.`;
 }
 
 function txReport(a) {
@@ -246,14 +254,14 @@ async function write(btn, progress, redraw) {
   btn.disabled = true;
   try {
     progress.textContent = 'מכין מזהים…';
-    const items = await Promise.all(S.tx.items.map(async it => ({ id: await docId('t', it.key, it.occ), data: it.doc })));
+    const items = S.existing > 0 || !S.tx ? [] : await Promise.all(S.tx.items.map(async it => ({ id: await docId('t', it.key, it.occ), data: it.doc })));
 
     /* מסמכים במסד שכבר לא קיימים בגיליון — מראים, לא מוחקים */
-    const existing = S.existing ? await store.list('transactions') : [];
+    const existing = S.existing && items.length ? await store.list('transactions') : [];
     const newIds = new Set(items.map(i => i.id));
     const orphans = existing.filter(d => d.source && d.source.kind === 'sheet' && !newIds.has(d.id));
 
-    await store.putMany('transactions', items, { onProgress: (d, t) => { progress.textContent = `תנועות: ${d.toLocaleString('en-US')} / ${t.toLocaleString('en-US')}`; } });
+    if (items.length) await store.putMany('transactions', items, { onProgress: (d, t) => { progress.textContent = `תנועות: ${d.toLocaleString('en-US')} / ${t.toLocaleString('en-US')}`; } });
     const years = S.fx ? yearDocsFromSeries(S.fx.series) : [];
     if (years.length) await store.putMany('market', years.map(y => ({ id: `fx_${y.year}`, data: y })));
     progress.textContent = 'כללי סיווג…';
@@ -265,7 +273,7 @@ async function write(btn, progress, redraw) {
 
     clearInvestCache();
     clearSpendCache();
-    S.existing = items.length;
+    if (items.length) S.existing = items.length;
     progress.textContent = '';
     toast(`נכתבו ${items.length.toLocaleString('en-US')} תנועות, ${years.length} מסמכי שערים${rules.length ? ` ו-${rules.length} כללים` : ' (הכללים שבמסד נשארו כמו שהם)'}.`);
     if (orphans.length) toast(`${orphans.length} תנועות במסד לא קיימות יותר בגיליון. בדוק אותן במסך התנועות לפני שממשיכים.`, { ms: 15000 });

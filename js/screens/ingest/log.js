@@ -11,6 +11,7 @@ import { hrefOf } from '../../core/routes.js';
 import { session } from '../../core/auth.js';
 import * as store from '../../core/store.js';
 import { clearSpendCache } from '../spend/data.js';
+import { clearInvestCache } from '../invest/data.js';
 
 export async function render(el, ctx) {
   mount(el, head(ctx), loading('table'));
@@ -28,7 +29,7 @@ export async function render(el, ctx) {
       { key: 'when', label: 'מתי', render: r => num(r.createdAt && r.createdAt.toDate ? day(r.createdAt.toDate().toISOString()) : '—') },
       { key: 'who', label: 'מי', render: r => session.nameOf(r.createdBy) },
       { key: 'fileName', label: 'קובץ' },
-      { key: 'kind', label: 'סוג', render: r => ({ credit: 'אשראי', bank: 'עו"ש' }[r.kind] || r.kind) },
+      { key: 'kind', label: 'סוג', render: r => ({ credit: 'אשראי', bank: 'עו"ש', ibi: 'איביאי' }[r.kind] || r.kind) + (r.portfolio ? ` · ${r.portfolio}` : '') },
       { key: 'period', label: 'תקופה', render: r => r.billingMonth || (r.range ? `${day(r.range.from)}–${day(r.range.to)}` : '') },
       { key: 'added', label: 'נוספו', num: true, render: r => num(String(r.added ?? 0)) },
       { key: 'skipped', label: 'דולגו', num: true, render: r => num(String(r.skipped ?? 0)) },
@@ -57,12 +58,15 @@ function undoButton(r, el, ctx) {
 
 export async function voidImport(importId) {
   const rec = await store.get('imports', importId);
-  const coll = rec && rec.kind === 'bank' ? 'bank' : 'expenses';
+  /* איביאי: הביטול מסמן רק את השורות החדשות. עדכוני אומדן מס בשורות
+     קיימות נשארים — הם הערך הנכון מהברוקר, לא משהו שהקליטה המציאה. */
+  const coll = !rec ? 'expenses' : rec.kind === 'bank' ? 'bank' : rec.kind === 'ibi' ? 'transactions' : 'expenses';
   const rows = await store.listWhere(coll, 'source.importId', '==', importId);
   const uid = session.user ? session.user.uid : null;
   const at = new Date().toISOString();
   await store.patchMany(coll, rows.filter(r => !r.voided).map(r => ({ id: r.id, fields: { voided: true, voidedBy: uid, voidedAt: at } })));
   clearSpendCache();
+  clearInvestCache();
   await store.patch('imports', importId, { voided: true, voidedBy: uid, voidedAt: at });
   return rows.length;
 }
