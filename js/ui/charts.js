@@ -101,6 +101,29 @@ export async function tradeChart(el, { closes, markers = [], avgCost = null, hei
   return chart;
 }
 
+/* גרף עמודות לרווח לפי תקופה: ירוק מעל 0, אדום מתחת.
+   bars: [{ time: 'YYYY-MM-DD', value }] */
+export async function barChart(el, { bars, format = v => v.toFixed(0), height = 260 }) {
+  const L = await loadCharts();
+  el.style.height = `${height}px`;
+  const grid = token('--grid'), muted = token('--muted'), fg = token('--fg-2');
+  const chart = L.createChart(el, {
+    autoSize: true,
+    layout: { background: { type: 'solid', color: 'transparent' }, textColor: muted, fontFamily: token('--mono') || 'monospace', fontSize: 11 },
+    grid: { vertLines: { visible: false }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: grid, scaleMargins: { top: 0.08, bottom: 0.08 } },
+    timeScale: { borderColor: grid, timeVisible: false, rightOffset: 1 },
+    crosshair: { mode: 0, vertLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') }, horzLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') } },
+    localization: { priceFormatter: format, locale: 'en-US' },
+    handleScale: { axisPressedMouseMove: false },
+  });
+  const up = token('--up'), down = token('--down');
+  const ser = chart.addSeries(L.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'custom', formatter: format }, base: 0 });
+  ser.setData(bars.map(b => ({ time: b.time, value: b.value, color: b.value >= 0 ? up : down })));
+  chart.timeScale().fitContent();
+  return chart;
+}
+
 /* מקרא לגרף — HTML ולא בתוך הקנבס, כדי שיהיה בעברית ונגיש. */
 export function legend(items) {
   return h('div', { class: 'legend' }, items.map(i =>

@@ -16,6 +16,7 @@ export const WORLDS = [
     subs: [
       { id: 'holdings', label: 'אחזקות', stage: 3, load: () => import('../screens/invest/holdings.js') },
       { id: 'performance', label: 'ביצועים מול מדד', stage: 3, load: () => import('../screens/invest/performance.js') },
+      { id: 'periods', label: 'רווח לפי תקופה', stage: 3, load: () => import('../screens/invest/periods.js') },
       { id: 'transactions', label: 'תנועות', stage: 3, load: () => import('../screens/invest/transactions.js') },
       { id: 'tax', label: 'מס ועמלות', stage: 3, load: () => import('../screens/invest/tax.js') },
       { id: 'stock', label: 'ניירות ויומן', stage: 3, load: () => import('../screens/invest/stock.js') },
