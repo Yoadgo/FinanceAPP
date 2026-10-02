@@ -135,7 +135,7 @@ export function dailyPnl(rows, history, { fx = null, to = null } = {}) {
       if (Math.abs(c) > 1e-9) contrib[s] = c;
     });
     const otherUsd = other.usd + (rt ? other.ils / rt : 0);
-    days.push({ date: d, mv, mvIls, pnlUsd, pnlIls, buysUsd, buysIls: rt ? buysUsd * rt : null, prevMv, prevMvIls, contrib, otherUsd, fallback: fell });
+    days.push({ date: d, mv, mvIls, pnlUsd, pnlIls, buysUsd, buysIls: rt ? buysUsd * rt : null, prevMv, prevMvIls, contrib, bySym: byS, otherUsd, fallback: fell });
     prevMv = mv; prevMvIls = mvIls; prevByS = byS;
   }
   return { days, fallbackDays, missingFx: [...missing].sort() };
