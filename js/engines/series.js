@@ -107,23 +107,76 @@ export function usdCashDeltas(rows) {
   return out.sort((a, b) => a.t - b.t);
 }
 
+/* יתרה שקלית בסוף כל יום, לכל תיק — בלי תלות בסדר השורות.
+   הרקע (2.10.2026): הברוקר רושם בכל שורה את היתרה שאחריה. ביום עם כמה
+   תנועות שקליות יש כמה יתרות שונות, ורק אחת מהן היא של סוף היום. מנוע
+   ה-FIFO לוקח את "השורה האחרונה", אבל סדר השורות בתוך יום שרירותי (מזהי
+   מסמכים) — ביום עם משיכה + המרה נבחרה יתרת ביניים, והגרף הראה בור של
+   עשרות אלפי דולרים עד התנועה הבאה של אותו תיק.
+   הכלל: יתרת סוף היום הצפויה = יתרת סוף היום הקודם + סך TotalILS של היום.
+   בוחרים את היתרה המדווחת הקרובה ביותר לצפויה. משתמשים תמיד בערך שהברוקר
+   דיווח (לא בחישוב), כך ששגיאה לא נצברת. נמדד על הנתונים האמיתיים: בכל
+   39 הימים שבהם יש יותר מיתרה אחת, אחת מהן שווה לצפויה עד האגורה.
+   יתרה 0 = "לא דווחה" (כמו במנוע).
+   מחזיר [{ t, port, ils }] ממוין לפי זמן. */
+export function ilsCashByDay(rows) {
+  const num = v => (typeof v === 'number' ? v : parseFloat(String(v == null ? '' : v).replace(/[^\d.-]/g, ''))) || 0;
+  const groups = new Map();                                  // port|date → { port, date, t, sum, cands }
+  (rows || []).forEach(r => {
+    const t = new Date(r.Date).getTime();
+    if (!isFinite(t)) return;
+    const port = String(r.Portfolio || '').trim(), date = String(r.Date).slice(0, 10), key = `${port}|${date}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = { port, date, t, sum: 0, cands: [] });
+    g.sum += num(r.TotalILS);
+    const bal = num(r.CashBalanceILS);
+    if (Math.abs(bal) > 0.0001) g.cands.push(bal);
+  });
+  const prev = {}, out = [];
+  [...groups.values()].sort((a, b) => a.t - b.t || (a.port < b.port ? -1 : a.port > b.port ? 1 : 0)).forEach(g => {
+    if (!g.cands.length) return;
+    const expected = (prev[g.port] || 0) + g.sum;
+    const ils = g.cands.reduce((best, c) => (Math.abs(c - expected) < Math.abs(best - expected) ? c : best), g.cands[0]);
+    prev[g.port] = ils;
+    out.push({ t: g.t, port: g.port, ils });
+  });
+  return out;
+}
+
+/* שער לפי זמן — אותו כלל כמו במנוע ה-FIFO (_mkFxAt): השער האחרון עד אותו יום. */
+function fxAtTime(series, t, fallback) {
+  const d = series && series.d, r = series && series.r;
+  if (!d || !d.length) return fallback;
+  const day = Math.floor(t / DAY);
+  if (day <= d[0]) return r[0];
+  let lo = 0, hi = d.length - 1, best = r[0];
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (d[mid] <= day) { best = r[mid]; lo = mid + 1; } else hi = mid - 1; }
+  return best;
+}
+
 /* שלוש הסדרות, לפי יום. */
 export function investSeries(rows, historyMap, fx, bench = 'IVV') {
-  const pts = PortfolioEngine.computeEquityCurve(rows, historyMap, fx.rateOn(fx.last), 'day', fx.engineSeries);
+  const fxNow = fx.rateOn(fx.last);
+  const pts = PortfolioEngine.computeEquityCurve(rows, historyMap, fxNow, 'day', fx.engineSeries);
   /* יתרת הדולרים בכל נקודה — אותו כלל חיתוך כמו במנוע (תנועה נכנסת
      כשהזמן שלה ≤ זמן הנקודה), כדי שהאחזקות והמזומן יזוזו באותו יום. */
   const deltas = usdCashDeltas(rows);
-  let di = 0, usdCash = 0;
+  /* היתרה השקלית — שלנו (ilsCashByDay), לא p.cash של המנוע: ר' ההסבר שם. */
+  const ilsDays = ilsCashByDay(rows), ilsByPort = {};
+  let di = 0, usdCash = 0, ci = 0;
   const byDay = new Map();
   pts.forEach(p => {
     while (di < deltas.length && deltas[di].t <= p.t) usdCash += deltas[di++].usd;
-    byDay.set(isoDay(p.t + 12 * 3600000), { p, usdCash });           // חצות מקומית → אותו יום
+    while (ci < ilsDays.length && ilsDays[ci].t <= p.t) { ilsByPort[ilsDays[ci].port] = ilsDays[ci].ils; ci++; }
+    const ils = Object.values(ilsByPort).reduce((a, v) => a + v, 0);
+    const rate = fxAtTime(fx.engineSeries, p.t, fxNow);
+    byDay.set(isoDay(p.t + 12 * 3600000), { p, usdCash, ilsCash: rate ? ils / rate : ils });   // חצות מקומית → אותו יום
   });
   const days = [...byDay.keys()].sort();
   const value = [], invested = [], cashUsd = [];
   days.forEach(d => {
-    const { p, usdCash: u } = byDay.get(d);
-    value.push({ time: d, value: p.marketValue + p.cash + u });
+    const { p, usdCash: u, ilsCash } = byDay.get(d);
+    value.push({ time: d, value: p.marketValue + ilsCash + u });
     invested.push({ time: d, value: p.invested });
     cashUsd.push({ time: d, value: u });
   });
