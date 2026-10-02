@@ -17,6 +17,9 @@ import * as gate from './ui/gate.js';
 
 const root = document.getElementById('root');
 
+/* קבצים תמיד עדכניים אחרי דחיפה — ההסבר ב-sw.js. כישלון רישום לא עוצר כלום. */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
+
 async function boot() {
   if (!isConfigured()) { gate.renderSetupNeeded(root); return; }
   let auth;

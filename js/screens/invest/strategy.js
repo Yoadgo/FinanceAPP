@@ -19,9 +19,15 @@ import { dailyPnl } from '../../engines/periods.js';
 import { strategy, verdictText, GROUPS } from '../../engines/strategy.js';
 import { barChart } from '../../ui/charts.js';
 import { BENCHMARK } from '../../config.js';
+import { compareSymbols } from '../../engines/compare.js';
 
 const PRESETS = [['1M', 'חודש'], ['2M', 'חודשיים'], ['3M', '3 חודשים'], ['YTD', 'מתחילת השנה'], ['1Y', 'שנה'], ['ALL', 'הכל']];
-const st = { portfolio: 'all', preset: 'YTD', from: '', to: '', open: 'active' };
+const st = { portfolio: 'all', preset: 'YTD', from: '', to: '', open: 'active', bench: null };
+/* המדד להשוואה (יועד, 2.10.2026: "אסטרטגיה" — מול QQQ במקום מול IVV, למשל).
+   ברירת מחדל IVV. הבחירה נזכרת במכשיר — נוחות, לא נתון. */
+const BENCH_KEY = 'strategy:bench';
+try { st.bench = localStorage.getItem(BENCH_KEY); } catch (e) { /* חסום — ברירת מחדל */ }
+const bench = () => st.bench || BENCHMARK;
 let cache = { key: '', D: null };
 let settings = null;                                   // המסמך settings/strategy, או null
 
@@ -69,8 +75,9 @@ function draw(el, inv, market) {
   const from = st.preset ? rangeOf(st.preset, lastDay) : (st.from || '0000-00-00');
   const to = st.preset ? lastDay : (st.to || lastDay);
   const map = (settings && settings.map) || null;
+  if (!compareSymbols(market.history).includes(bench())) st.bench = null;   // נייר שנבחר ואין לו היסטוריה — חזרה ל-IVV
   let A;
-  try { A = strategy(D.days, market.history, rows, { from, to, map, bench: BENCHMARK }); }
+  try { A = strategy(D.days, market.history, rows, { from, to, map, bench: bench() }); }
   catch (e) { mount(el, head(), errorState({ title: 'החישוב נכשל', error: e })); return; }
 
   /* ── כלים ── */
@@ -79,9 +86,13 @@ function draw(el, inv, market) {
   const onDates = () => { st.preset = ''; st.from = fromIn.value; st.to = toIn.value; redraw(); };
   fromIn.addEventListener('change', onDates); toIn.addEventListener('change', onDates);
   const tools = seg('תיק', [['all', 'כל התיקים'], ...inv.portfolios.map(p => [p, p])], st.portfolio, v => { st.portfolio = v; redraw(); });
+  const benchSel = h('select', { class: 'cmp-add', style: { borderStyle: 'solid' }, 'aria-label': 'מדד להשוואה' },
+    compareSymbols(market.history).map(sym => h('option', { value: sym, selected: sym === bench() }, sym)));
+  benchSel.addEventListener('change', () => { st.bench = benchSel.value; try { localStorage.setItem(BENCH_KEY, st.bench); } catch (e) { /* לא נזכר */ } redraw(); });
   const rangeBar = h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
     seg('טווח', PRESETS, st.preset, v => { st.preset = v; redraw(); }),
-    h('span', { class: 'small muted' }, 'או:'), fromIn, h('span', { class: 'small muted' }, '→'), toIn);
+    h('span', { class: 'small muted' }, 'או:'), fromIn, h('span', { class: 'small muted' }, '→'), toIn,
+    h('span', { class: 'small muted', style: { marginInlineStart: '8px' } }, 'מול:'), benchSel);
 
   if (!A.days) { mount(el, head(tools), rangeBar, emptyState({ title: 'אין ימי מסחר בטווח הזה', text: 'אפשר לבחור טווח אחר.' })); return; }
 
@@ -95,11 +106,11 @@ function draw(el, inv, market) {
     ? note('לא היה מסחר אקטיבי בטווח הזה.', { kind: 'info' })
     : h('div', { class: `verdict ${act.worth ? 'good' : 'bad'}` },
       h('span', { class: 'mark', 'aria-hidden': 'true' }, act.worth ? '✓' : '✗'),
-      h('b', null, act.worth ? `המסחר האקטיבי הכה את ${BENCHMARK}` : `המסחר האקטיבי לא הכה את ${BENCHMARK}`),
-      h('p', null, `${span}: ${verdictText(act, BENCHMARK)}`));
+      h('b', null, act.worth ? `המסחר האקטיבי הכה את ${bench()}` : `המסחר האקטיבי לא הכה את ${bench()}`),
+      h('p', null, `${span}: ${verdictText(act, bench())}`));
 
   const strip = h('div', { class: 'strip' },
-    kpi({ label: `מסחר אקטיבי מול ${BENCHMARK}`, value: hasAct ? money(act.edge) : '—', cls: dirClass(act.edge), ctx: hasAct ? `נטו ${money(act.pnl)} · המדד ${money(act.bench)}` : '' }),
+    kpi({ label: `מסחר אקטיבי מול ${bench()}`, value: hasAct ? money(act.edge) : '—', cls: dirClass(act.edge), ctx: hasAct ? `נטו ${money(act.pnl)} · המדד ${money(act.bench)}` : '' }),
     kpi({ label: 'עסקאות', value: String(act.trades), size: 'sm', ctx: `${act.buys} קניות · ${act.sells} מכירות · ${act.symbols.length} ניירות` }),
     kpi({ label: 'עמלות על המסחר', value: usd(act.fees, { digits: 0 }), size: 'sm', ctx: act.trades ? `${usd(act.fees / act.trades, { digits: 1 })} לעסקה · כבר בתוך הנטו` : '' }),
     kpi({ label: 'הון ממוצע במסחר', value: usd(act.avgCap, { digits: 0 }), size: 'sm', ctx: act.ret === null ? '' : `${pct(act.ret * 100)} תשואה עליו` }),
@@ -114,7 +125,7 @@ function draw(el, inv, market) {
       { key: 'w', label: 'משקל היום', num: true, render: x => num(x.weight === null ? '—' : pct(x.weight * 100, { sign: false, digits: 0 })) },
       { key: 'cap', label: 'הון ממוצע', num: true, render: x => num(usd(x.avgCap, { digits: 0 })) },
       { key: 'pnl', label: 'רווח נטו', num: true, render: x => num(money(x.pnl), dirClass(x.pnl)) },
-      { key: 'bench', label: `אותו כסף ב-${BENCHMARK}`, num: true, render: x => num(money(x.bench), dirClass(x.bench)) },
+      { key: 'bench', label: `אותו כסף ב-${bench()}`, num: true, render: x => num(money(x.bench), dirClass(x.bench)) },
       { key: 'tr', label: 'עסקאות', num: true, render: x => num(String(x.trades)) },
     ],
     rows: A.groups,
@@ -136,15 +147,15 @@ function draw(el, inv, market) {
   }
 
   const notes = [];
-  if (A.benchMissing) notes.push(note(`ב-${A.benchMissing} ימים חסרה סגירה של ${BENCHMARK}, ולכן "אותו כסף במדד" חסר בהם. היתרון בטווח הזה לא שלם.`, { kind: 'attn' }));
+  if (A.benchMissing) notes.push(note(`ב-${A.benchMissing} ימים חסרה סגירה של ${bench()}, ולכן "אותו כסף במדד" חסר בהם. היתרון בטווח הזה לא שלם.`, { kind: 'attn' }));
   if (A.fallbackDays) notes.push(note(`ב-${A.fallbackDays} ימים היה נייר בלי מחיר סגירה, והוא הוערך לפי מחיר העסקה האחרונה בו.`, { kind: 'info' }));
 
   mount(el, head(tools), rangeBar, verdict, strip, ...notes,
     h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, 'ארבעת החלקים'), h('span', { class: 'chart-note' }, 'לחיצה = הניירות של החלק')), h('div', { class: 'panel-b flush' }, tbl)),
-    chartG ? h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `${chartG.label}: יתרון מול ${BENCHMARK} לפי חודש`)), h('div', { class: 'panel-b' }, chartBox,
+    chartG ? h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `${chartG.label}: יתרון מול ${bench()} לפי חודש`)), h('div', { class: 'panel-b' }, chartBox,
       h('p', { class: 'small muted', style: { marginTop: '6px' } }, 'עמודה ירוקה = בחודש הזה החלק הזה עשה יותר מהמדד על אותו כסף. אדומה = המדד עשה יותר.'))) : null,
     Math.abs(A.total.other) >= 0.5 ? h('p', { class: 'small muted' }, `לא מיוחס לאף חלק: ${money(A.total.other)} (דיבידנדים, מס, ריבית ודמי טיפול). הפירוט ב"מס ועמלות".`) : null,
-    h('p', { class: 'small muted' }, `איך זה מחושב: רווח נטו = השינוי בשווי הניירות של החלק + מכירות − קניות, כולל עמלות. "אותו כסף ב-${BENCHMARK}" = בכל יום, השווי שהיה מושקע בנייר בתחילת היום כפול התשואה של ${BENCHMARK} באותו יום. עסקה שנפתחה ונסגרה באותו יום לא "ישנה" במדד, ולכן המדד שלה אפס. מס לא נכלל (הוא מחושב לכל תיק ושנה). נייר שייך לחלק אחד לכל אורך הטווח — גם אם פעם החזקת בו ועכשיו אתה סוחר בו.`));
+    h('p', { class: 'small muted' }, `איך זה מחושב: רווח נטו = השינוי בשווי הניירות של החלק + מכירות − קניות, כולל עמלות. "אותו כסף ב-${bench()}" = בכל יום, השווי שהיה מושקע בנייר בתחילת היום כפול התשואה של ${bench()} באותו יום. עסקה שנפתחה ונסגרה באותו יום לא "ישנה" במדד, ולכן המדד שלה אפס. מס לא נכלל (הוא מחושב לכל תיק ושנה). נייר שייך לחלק אחד לכל אורך הטווח — גם אם פעם החזקת בו ועכשיו אתה סוחר בו.`));
 }
 
 /* הניירות של קבוצה, עם אפשרות להעביר נייר לקבוצה אחרת */
@@ -172,7 +183,7 @@ function detail(G, redraw) {
         { key: 's', label: 'נייר', render: s => h('a', { href: stockHref(s.symbol), class: 'sym' }, s.symbol) },
         { key: 'edge', label: 'יתרון', num: true, render: s => num(money(s.edge), dirClass(s.edge)) },
         { key: 'pnl', label: 'רווח נטו', num: true, render: s => num(money(s.pnl), dirClass(s.pnl)) },
-        { key: 'bench', label: `ב-${BENCHMARK}`, num: true, render: s => num(money(s.bench), dirClass(s.bench)) },
+        { key: 'bench', label: `ב-${bench()}`, num: true, render: s => num(money(s.bench), dirClass(s.bench)) },
         { key: 'tr', label: 'עסקאות', num: true, render: s => num(String(s.trades)) },
         { key: 'fee', label: 'עמלות', num: true, render: s => num(usd(s.fees, { digits: 0 })) },
         { key: 'grp', label: 'חלק', render: pick },
