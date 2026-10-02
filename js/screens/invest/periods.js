@@ -13,7 +13,7 @@ import { h, mount, num } from '../../ui/dom.js';
 import { emptyState, errorState, loading, kpi, table, note } from '../../ui/components.js';
 import { usd, ils, pct, day, todayIso, dirClass } from '../../core/format.js';
 import { hrefOf, stockHref } from '../../core/routes.js';
-import { loadInvest, loadMarket } from './data.js';
+import { loadInvest, loadMarket, hasHistory, autoHistoryError } from './data.js';
 import { dailyPnl, aggregate } from '../../engines/periods.js';
 import { barChart } from '../../ui/charts.js';
 
@@ -30,8 +30,8 @@ export async function render(el, ctx) {
   try { [inv, market] = await Promise.all([loadInvest(), loadMarket()]); }
   catch (e) { mount(el, head(), errorState({ error: e, onRetry: () => render(el, ctx) })); return; }
   if (!inv.docs.length) { mount(el, head(), emptyState({ title: 'אין עדיין תנועות', text: 'הרווח מחושב מהתנועות ומהמחירים.', actions: [h('a', { class: 'btn primary', href: hrefOf('ingest', 'upload') }, 'לקליטת קובץ')] })); return; }
-  if (!Object.keys(market.history).length) {
-    mount(el, head(), emptyState({ title: 'אין עדיין היסטוריית מחירים', text: 'כדי לדעת כמה שווה היה התיק בכל יום צריך את מחירי הסגירה. הם נמשכים במסך המיגרציה, בלחיצה אחת.', actions: [h('a', { class: 'btn primary', href: hrefOf('ingest', 'migrate') }, 'למשיכת היסטוריה')] }));
+  if (!hasHistory(market)) {
+    mount(el, head(), emptyState({ title: 'אין עדיין היסטוריית מחירים', text: `כדי לדעת כמה שווה היה התיק בכל יום צריך את מחירי הסגירה.${autoHistoryError ? ` המשיכה האוטומטית נכשלה: ${autoHistoryError}.` : ''} אפשר למשוך ידנית במסך המיגרציה.`, actions: [h('a', { class: 'btn primary', href: hrefOf('ingest', 'migrate') }, 'למשיכת היסטוריה')] }));
     return;
   }
   draw(el, inv, market);
@@ -105,8 +105,8 @@ function draw(el, inv, market) {
 
   const chartBox = h('div', { class: 'stock-chart', style: { minHeight: '260px' } });
   const bars = A.periods.filter(p => p.pnl !== null).map(p => ({ time: p.from, value: p.pnl }));
-  requestAnimationFrame(() => barChart(chartBox, { bars, format: v => (st.cur === 'ils' ? '₪' : '$') + Math.round(v).toLocaleString('en-US'), height: 260 })
-    .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))));
+  setTimeout(() => barChart(chartBox, { bars, format: v => (st.cur === 'ils' ? '₪' : '$') + Math.round(v).toLocaleString('en-US'), height: 260 })
+    .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))), 0);
 
   const notes = [];
   const fb = A.periods.filter(p => p.fallback).length;

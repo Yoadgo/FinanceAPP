@@ -10,10 +10,10 @@
    החישוב: engines/efficiency.js (על בסיס Research.alpha מ-v3).
    ================================================================ */
 import { h, mount, num } from '../../ui/dom.js';
-import { emptyState, errorState, loading, kpi, table, chip } from '../../ui/components.js';
+import { emptyState, errorState, loading, kpi, table, chip, note } from '../../ui/components.js';
 import { usd, pct, dirClass } from '../../core/format.js';
 import { hrefOf, stockHref } from '../../core/routes.js';
-import { loadInvest, loadMarket } from './data.js';
+import { loadInvest, loadMarket, hasHistory } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { efficiency, verdictText } from '../../engines/efficiency.js';
 import { BENCHMARK } from '../../config.js';
@@ -29,7 +29,7 @@ export async function render(el, ctx) {
     mount(el, head(), emptyState({ title: 'אין עדיין תנועות', text: 'הניתוח נבנה מהתנועות אחרי המיגרציה.', actions: [h('a', { class: 'btn primary', href: hrefOf('ingest', 'migrate') }, 'למיגרציה')] }));
     return;
   }
-  if (!market.history[BENCHMARK]) {
+  if (!hasHistory(market)) {
     mount(el, head(), emptyState({
       title: `אין היסטוריית מחירים של ${BENCHMARK}`,
       text: 'כדי לדעת מה המדד היה עושה באותם ימים בדיוק, צריך את הסגירות היומיות שלו. הן נמשכות מגיליון המחירים במסך המיגרציה, בלחיצה אחת.',
@@ -79,7 +79,7 @@ function draw(el, inv, market) {
       { key: 'bench', label: `${BENCHMARK} היה`, num: true, render: s => num(usd(s.benchPnl, { sign: true }), 'muted') },
       { key: 'edge', label: 'יתרון', num: true, render: s => num(usd(s.edge, { sign: true }), dirClass(s.edge)) },
       { key: 'ann', label: 'שנתי', num: true, render: s => num(s.annualPct === null ? '—' : pct(s.annualPct, { digits: 0 }), dirClass(s.annualPct)) },
-      { key: 'verdict', label: 'שווה?', render: s => chip(s.worth ? 'שווה' : 'לא שווה', s.worth ? 'up' : 'down') },
+      { key: 'verdict', label: 'שווה?', render: s => (s.incomplete ? chip('חסר מחיר', 'attn') : chip(s.worth ? 'שווה' : 'לא שווה', s.worth ? 'up' : 'down')) },
     ],
     rows: e.bySymbol.map(s => ({ ...s, id: s.symbol })),
     onRow: (s, tr) => {
@@ -96,9 +96,11 @@ function draw(el, inv, market) {
   });
 
   const skipped = e.skipped.noPrice.length + e.skipped.noBench.length + e.skipped.badData.length;
+  const partial = e.bySymbol.filter(s => s.incomplete).map(s => s.symbol);
   mount(el,
     head(filters),
     verdict,
+    partial.length ? note(`ל-${partial.length} ניירות חסרים מחירים לחלק מהעסקאות (${partial.slice(0, 6).join(', ')}${partial.length > 6 ? '…' : ''}). הם מסומנים "חסר מחיר", והסך הכולל לא כולל את הפרוסות האלה.`, { kind: 'info' }) : null,
     strip,
     investChartPanel({ inv: { ...inv, rows }, market, height: 280 }),
     h('section', { class: 'panel' },

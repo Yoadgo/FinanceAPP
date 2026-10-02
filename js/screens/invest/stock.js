@@ -20,7 +20,7 @@ import { hrefOf, stockHref } from '../../core/routes.js';
 import { session } from '../../core/auth.js';
 import * as store from '../../core/store.js';
 import * as liveApi from '../../core/live.js';
-import { loadInvest, loadMarket } from './data.js';
+import { loadInvest, loadMarket, hasHistory, autoHistoryError } from './data.js';
 import { efficiency, verdictText } from '../../engines/efficiency.js';
 import { KINDS, normalizeEntry, currentThesis, timeline, targetGap, symbolsIndex } from '../../engines/journal.js';
 import { stockSummary, tradeMarkers, TAX_RATE } from '../../engines/stock.js';
@@ -49,7 +49,7 @@ export async function render(el, ctx) {
   }
   if (!selected || !index.find(s => s.symbol === selected)) selected = index[0].symbol;
   let eff = null;
-  try { if (market.history[BENCHMARK]) eff = efficiency(inv.rows, market.history, { bench: BENCHMARK, fx: market.fx }); } catch (e) { eff = null; }
+  try { if (hasHistory(market)) eff = efficiency(inv.rows, market.history, { bench: BENCHMARK, fx: market.fx }); } catch (e) { eff = null; }
   /* זיכוי מס פתוח השנה, לכל תיק (מגן המס) — בדולרים לפי שער היום */
   const creditsUsd = {};
   let creditNote = null;
@@ -97,7 +97,8 @@ function main(el, ctx, data) {
   const px = priceOf(sym, live, market);
   const thesis = currentThesis(sym, entries);
   const s = data.index.find(x => x.symbol === sym);
-  const effRow = eff && eff.bySymbol.find(x => x.symbol === sym);
+  const found = eff && eff.bySymbol.find(x => x.symbol === sym);
+  const effRow = found && !found.incomplete ? found : null;
 
   const header = h('div', { class: 'panel-h' },
     h('h2', null, h('span', { class: 'sym' }, sym), ' ', s.qty > 0 ? chip(`מוחזק · ${fq(s.qty)}`, 'up') : chip('לא מוחזק')),
@@ -108,7 +109,9 @@ function main(el, ctx, data) {
       h('span', { class: 'mark', 'aria-hidden': 'true' }, effRow.worth ? '✓' : '✗'),
       h('b', null, effRow.worth ? `שווה מול ${BENCHMARK}` : `לא שווה מול ${BENCHMARK}`),
       h('p', null, verdictText(effRow, BENCHMARK)))
-    : note(eff ? 'לנייר הזה עוד אין פרוסות למדידה מול המדד.' : `פסק הדין מול ${BENCHMARK} יופיע אחרי "משיכת היסטוריה" במסך המיגרציה.`, { kind: 'info' });
+    : note(found && found.incomplete ? `חסרים מחירים לחלק מהעסקאות בנייר הזה, ולכן אין פסק דין מול ${BENCHMARK} — חלקי היה מטעה.`
+      : eff ? 'לנייר הזה עוד אין פרוסות למדידה מול המדד.'
+      : `אין עדיין היסטוריית מחירים${autoHistoryError ? ` (המשיכה האוטומטית נכשלה: ${autoHistoryError})` : ''}. אפשר למשוך ידנית במסך המיגרציה.`, { kind: 'info' });
 
   /* התזה הנוכחית */
   let thesisCard;
@@ -134,17 +137,19 @@ function main(el, ctx, data) {
   const chartBox = h('div', { class: 'stock-chart' });
   const hist = market.history[sym] || [];
   const markers = tradeMarkers(sym, inv.rows);
-  const chartPart = hist.length > 1
+  const chartPart = hist.length > 20
     ? h('div', null, chartBox, legend([
       { label: 'סגירה', color: '--s-1' }, { label: '▲ קנייה', color: '--up' }, { label: '▼ מכירה', color: '--down' },
       ...(S.qty > 0 ? [{ label: `עלות ממוצעת ${usd(S.avgCost, { digits: 2 })}`, color: '--fg-2', dashed: true }] : [])]))
-    : note('אין עדיין היסטוריית מחירים לנייר הזה, ולכן אין גרף. היא נמשכת במסך המיגרציה ("משיכת היסטוריה").', { kind: 'info' });
-  if (hist.length > 1) {
+    : note(hasHistory(market) ? `אין היסטוריית מחירים ל-${sym} בגיליון המחירים, ולכן אין גרף. כדי להוסיף: להוסיף את הנייר לגיליון "FinanceAPP — מחירים".`
+      : `אין עדיין היסטוריית מחירים${autoHistoryError ? ` (המשיכה האוטומטית נכשלה: ${autoHistoryError})` : ''}, ולכן אין גרף.`, { kind: 'info' });
+  if (hist.length > 20) {
     /* מאז שבוע לפני הכניסה הראשונה — לא 2022 כולה בשביל נייר שנקנה אתמול */
     const from = S.firstDate ? new Date(Date.parse(S.firstDate) - 30 * 86400000).toISOString().slice(0, 10) : '';
     const closes = hist.filter(x => x.date >= from);
-    requestAnimationFrame(() => tradeChart(chartBox, { closes: closes.length > 1 ? closes : hist, markers, avgCost: S.qty > 0 ? S.avgCost : null, height: 300 })
-      .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))));
+    /* setTimeout ולא requestAnimationFrame: rAF לא רץ בלשונית מוסתרת, והגרף לא היה מצויר עד שחוזרים אליה */
+    setTimeout(() => tradeChart(chartBox, { closes: closes.length > 1 ? closes : hist, markers, avgCost: S.qty > 0 ? S.avgCost : null, height: 300 })
+      .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))), 0);
   }
 
   const edge = effRow ? effRow.edge : null;
@@ -159,7 +164,7 @@ function main(el, ctx, data) {
       ctx: S.qty > 0 ? `${fq(S.qty)} יח' · עלות ${usd(S.openCost)}` : 'אין אחזקה' }),
     kpi({ label: 'עמלות', value: usd(S.commissions), size: 'sm', ctx: `${S.entries + S.exits} עסקאות` }),
     kpi({ label: `מול ${BENCHMARK}`, value: edge === null ? '—' : usd(edge, { sign: true }), size: 'sm', cls: dirClass(edge),
-      ctx: effRow ? (effRow.worth ? 'שווה — הכה את המדד' : 'לא שווה — המדד היה עושה יותר') : 'דרושה היסטוריית מחירים' }));
+      ctx: effRow ? (effRow.worth ? 'שווה — הכה את המדד' : 'לא שווה — המדד היה עושה יותר') : (found && found.incomplete ? 'חסרים מחירים' : 'דרושה היסטוריית מחירים') }));
 
   const kv = (label, value, cls = '') => h('div', { class: 'kv' }, h('span', { class: 'muted' }, label), num(value, cls));
   const N = S.sellNow;

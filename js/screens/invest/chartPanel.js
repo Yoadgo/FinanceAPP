@@ -41,7 +41,7 @@ export function investChartPanel({ inv, market, title = 'שווי התיק מו�
     return panel;
   }
 
-  const hasPrices = Object.keys(market.history).length > 0;
+  const hasPrices = Object.values(market.history).some(a => a.length >= 200);
   const last = S.days[S.days.length - 1] || todayIso();
   let chart = null, current = initial;
 

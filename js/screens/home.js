@@ -19,7 +19,7 @@ import { session } from '../core/auth.js';
 import { monthSavings } from '../engines/savings.js';
 import { bankEffective } from '../engines/spend.js';
 import { creditBucket } from '../engines/ingestPlan.js';
-import { loadInvest, loadMarket } from './invest/data.js';
+import { loadInvest, loadMarket, hasHistory } from './invest/data.js';
 import { investChartPanel } from './invest/chartPanel.js';
 
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -138,7 +138,7 @@ function actionsPanel({ inv, bank, expenses, expPending, bankPending, market, po
   const items = [];
   const add = (text, href, action) => items.push(h('div', null, h('span', { class: 'txt' }, h('span', { class: 'dot' }), text), h('a', { class: 'btn sm', href }, action)));
   if (!inv.docs.length) add('תנועות ההשקעה עוד לא הועברו מהגיליון', hrefOf('ingest', 'migrate'), 'למיגרציה');
-  else if (!Object.keys(market.history).length) add('אין היסטוריית מחירים — הגרפים חסרים', hrefOf('ingest', 'migrate'), 'למשוך');
+  else if (!hasHistory(market)) add('אין היסטוריית מחירים — הגרפים חסרים', hrefOf('ingest', 'migrate'), 'למשוך');
   if (expPending) add(`${expPending.toLocaleString('he-IL')} שורות אשראי ממתינות לסיווג`, hrefOf('spend', 'pending'), 'לסווג');
   if (bankPending) add(`${bankPending.toLocaleString('he-IL')} תנועות עו"ש בלי דלי`, hrefOf('spend', 'cashflow'), 'לבדוק');
   if (!expenses.length && !bank.length) add('עוד לא נקלט קובץ אשראי או עו"ש', hrefOf('ingest', 'upload'), 'לקליטה');

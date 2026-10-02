@@ -100,3 +100,21 @@ section('גיליון המחירים — פענוח');
   const bad = parsePricesSheet(parseCsv('IVV,IVV\nprice,#N/A\nchangepct,\n'));
   ok(bad.problems.some(x => x.includes('IVV')), 'מחיר חסר → בעיה מדווחת, לא אפס');
 }
+
+/* באג 2.10.2026: כשחסרה היסטוריית המדד, נייר הוצג "לא שווה" (נטו = −עמלות, המדד = 0). */
+import { efficiency as eff2 } from '../js/engines/efficiency.js';
+import { Classifier as C2 } from '../js/engines/classifier.js';
+import { section as sec2, ok as ok2 } from './lib.mjs';
+sec2('יעילות — היסטוריה חסרה');
+{
+  const rows = C2.enrichAll([
+    { Date: '2026-01-02', Type: 'קניה חול מטח', Symbol: 'ZS', Name: 'ZS US', Qty: 10, ExecutionRate: 100, TotalFX: -1006, Commission: 6, Portfolio: 'Y', Currency: '$' },
+    { Date: '2026-03-02', Type: 'מכירה חול מטח', Symbol: 'ZS', Name: 'ZS US', Qty: 10, ExecutionRate: 150, TotalFX: 1494, Commission: 6, Portfolio: 'Y', Currency: '$' },
+  ]);
+  const e = eff2(rows, { IVV: [{ date: '2026-10-01', close: 770 }] }, { bench: 'IVV' });
+  const z = e.bySymbol.find(s => s.symbol === 'ZS');
+  ok2(z && z.incomplete, 'פרוסה בלי מחיר מדד → הנייר מסומן "חסר", לא "לא שווה"');
+  ok2(e.total.incomplete, 'וגם הסך הכולל');
+  const full = eff2(rows, { IVV: [{ date: '2026-01-02', close: 700 }, { date: '2026-03-02', close: 700 }] }, { bench: 'IVV' });
+  ok2(!full.bySymbol[0].incomplete && full.bySymbol[0].worth, 'עם מחירים — נמדד, ושווה');
+}

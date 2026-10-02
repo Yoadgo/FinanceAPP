@@ -14,7 +14,7 @@ import { emptyState, errorState, loading, kpi, table, note } from '../../ui/comp
 import { allocation, sparkline } from '../../ui/charts.js';
 import { usd, qty as fq, pct, day, dirClass } from '../../core/format.js';
 import { hrefOf, stockHref } from '../../core/routes.js';
-import { loadInvest, loadMarket } from './data.js';
+import { loadInvest, loadMarket, hasHistory } from './data.js';
 import { investChartPanel } from './chartPanel.js';
 import { lastCloses } from '../../engines/series.js';
 import { efficiency } from '../../engines/efficiency.js';
@@ -84,7 +84,7 @@ function draw(el, ctx, inv, market, live) {
   const realized = pos.reduce((s, p) => s + p.realizedPnl, 0);
 
   let eff = null;
-  try { if (market.history[BENCHMARK]) eff = efficiency(rows, market.history, { bench: BENCHMARK, fx: market.fx }); } catch (e) { eff = null; }
+  try { if (hasHistory(market)) eff = efficiency(rows, market.history, { bench: BENCHMARK, fx: market.fx }); } catch (e) { eff = null; }
 
   const filters = h('div', { class: 'seg', role: 'group', 'aria-label': 'תיק' },
     ['all', ...inv.portfolios].map(p => h('button', { type: 'button', 'aria-pressed': String(filter === p), onclick: () => { filter = p; draw(el, ctx, inv, market, live); } }, p === 'all' ? 'כל התיקים' : p)));

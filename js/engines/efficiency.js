@@ -58,6 +58,10 @@ export function efficiency(rows, historyMap, { bench = 'IVV', fx = null } = {}) 
     if (t.pnl > 0) { s.wins++; s.grossWin += t.pnl; } else if (t.pnl < 0) { s.losses++; s.grossLoss += -t.pnl; }
   });
 
+  /* פרוסה שלא נמדדה (חסר מחיר המדד או של הנייר) = הנייר לא נמדד במלואו.
+     בלי זה: נטו = 0 − עמלות, "המדד היה" = 0, ופסק דין "לא שווה" שקרי. */
+  [...alpha.skipped.noBench, ...alpha.skipped.noPrice, ...alpha.skipped.badData].forEach(sl => { get(sl.symbol).missing = (get(sl.symbol).missing || 0) + 1; });
+
   alpha.rows.forEach(a => {
     const s = get(a.symbol);
     s.pnl += a.pnl; s.benchPnl += a.benchPnl; s.cost += a.cost; s.slices++;
@@ -74,6 +78,7 @@ export function efficiency(rows, historyMap, { bench = 'IVV', fx = null } = {}) 
       portfolios: [...(s.portfolios || [])],
       net, edge,
       worth: edge >= 0,
+      incomplete: (s.missing || 0) > 0,
       /* תשואה שנתית על ההון שהיה מושקע בפועל, ומה המדד היה נותן עליו */
       annual: years > 0 ? net / years : null,
       annualPct: s.capitalDays > 0 ? (net / s.capitalDays) * 365 * 100 : null,
@@ -92,7 +97,9 @@ export function efficiency(rows, historyMap, { bench = 'IVV', fx = null } = {}) 
     return t;
   }, { symbol: 'סה"כ', portfolios: new Set(), entries: 0, exits: 0, wins: 0, losses: 0, grossWin: 0, grossLoss: 0, commissions: 0, pnl: 0, benchPnl: 0, cost: 0, capitalDays: 0, openCost: 0, slices: 0 });
 
-  return { bench, bySymbol, total: finish(tot), skipped: alpha.skipped, covered: alpha.covered };
+  const total = finish(tot);
+  total.incomplete = bySymbol.some(s => s.incomplete);
+  return { bench, bySymbol, total, skipped: alpha.skipped, covered: alpha.covered };
 }
 
 /* משפט אחד שעונה על השאלה, בלי ז'רגון. */
