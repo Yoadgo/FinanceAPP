@@ -15,7 +15,9 @@ import { usd, ils, pct, day, todayIso, dirClass } from '../../core/format.js';
 import { hrefOf, stockHref } from '../../core/routes.js';
 import { loadInvest, loadMarket, hasHistory, autoHistoryError } from './data.js';
 import { dailyPnl, aggregate } from '../../engines/periods.js';
-import { barChart } from '../../ui/charts.js';
+import { barChart, legend } from '../../ui/charts.js';
+import { comparePicker } from '../../ui/comparePicker.js';
+import { compareSymbols, periodReturns } from '../../engines/compare.js';
 
 const RES = [['day', 'יומי'], ['week', 'שבועי'], ['month', 'חודשי']];
 const PRESETS = [['1M', 'חודש'], ['3M', '3 חודשים'], ['YTD', 'מתחילת השנה'], ['1Y', 'שנה'], ['ALL', 'הכל']];
@@ -113,7 +115,13 @@ function draw(el, inv, market) {
     : A.periods.filter(p => p.pnl !== null).map(p => ({ time: p.from, value: p.pnl }));
   const fmt = asPct ? v => `${v.toFixed(Math.abs(v) < 10 ? 1 : 0)}%` : v => sym + Math.round(v).toLocaleString('en-US');
   const noPct = asPct ? A.periods.filter(p => p.pnl !== null && p.pct === null).length : 0;
-  setTimeout(() => barChart(chartBox, { bars, format: fmt, height: 260 })
+  /* השוואה לטיקר (יועד, 2.10.2026): תשואת הנייר באותה תקופה, כנקודה ליד העמודה שלך.
+     רק באחוזים — תשואה של נייר בדולרים לא אומרת כלום מול רווח בסכום. */
+  const picker = comparePicker({ key: 'periods', symbols: compareSymbols(market.history), onChange: redraw });
+  const cmp = picker.selected();
+  const withPct = A.periods.filter(p => p.pct !== null);
+  const lines = asPct ? cmp.map(c => ({ color: c.color, data: periodReturns(market.history[c.sym] || [], withPct) })) : [];
+  setTimeout(() => barChart(chartBox, { bars, format: fmt, height: 260, lines })
     .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))), 0);
 
   const notes = [];
@@ -144,7 +152,10 @@ function draw(el, inv, market) {
 
   mount(el, head(tools), rangeBar, strip, ...notes,
     h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `רווח ${RES.find(r => r[0] === st.res)[1]}`), seg('יחידות הגרף', [['pct', '%'], ['amt', sym]], st.unit, v => { st.unit = v; redraw(); })),
-      h('div', { class: 'panel-b' }, chartBox,
+      h('div', { class: 'panel-b' }, h('div', { class: 'cmp-bar' }, picker.el,
+          cmp.length && !asPct ? h('span', { class: 'small muted' }, 'ההשוואה מוצגת רק באחוזים — עבור ל-%') : null),
+        chartBox,
+        cmp.length && asPct ? legend([{ label: 'התשואה שלך', color: '--up' }, ...cmp.map(c => ({ label: `${c.sym} באותה תקופה`, color: c.color }))]) : null,
         asPct ? h('p', { class: 'small muted', style: { marginTop: '6px' } }, `אחוז = רווח התקופה חלקי ההון שהיה מושקע בה (שווי בתחילתה + מחצית הקניות).${noPct ? ` ${noPct} תקופות בלי הון מושקע בתחילתן לא מוצגות.` : ''}`) : null)),
     h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `לפי ${{ day: 'יום', week: 'שבוע', month: 'חודש' }[st.res]} · ${A.count}`), h('span', { class: 'chart-note' }, 'לחיצה = ממה הרווח מורכב')), h('div', { class: 'panel-b flush' }, tbl)),
     h('p', { class: 'small muted' }, 'איך זה מחושב: רווח = השינוי בשווי האחזקות + מה שנכנס מהן (מכירות, דיבידנדים, זיכויי מס) − מה שיצא אליהן (קניות כולל עמלה, מס, ריבית חובה, דמי טיפול). הפקדות ומשיכות לא נספרות כרווח. התרומה של כל נייר — בדולרים.'));

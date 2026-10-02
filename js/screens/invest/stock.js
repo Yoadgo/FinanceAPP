@@ -26,6 +26,8 @@ import { KINDS, normalizeEntry, currentThesis, timeline, targetGap, symbolsIndex
 import { stockSummary, tradeMarkers, TAX_RATE } from '../../engines/stock.js';
 import { friction } from '../../engines/friction.js';
 import { tradeChart, legend } from '../../ui/charts.js';
+import { comparePicker } from '../../ui/comparePicker.js';
+import { compareSymbols, rebasePct, closeBefore } from '../../engines/compare.js';
 import { BENCHMARK } from '../../config.js';
 
 let selected = null;
@@ -137,20 +139,41 @@ function main(el, ctx, data) {
   const chartBox = h('div', { class: 'stock-chart' });
   const hist = market.history[sym] || [];
   const markers = tradeMarkers(sym, inv.rows);
+  /* השוואה לטיקר (יועד, 2.10.2026): כשנבחר נייר להשוואה, כל הגרף עובר לאחוזים
+     מתחילת הטווח — הנייר, העלות הממוצעת וקווי ההשוואה — כדי שיהיו על ציר אחד. */
+  const legendBox = h('div');
+  const pickerS = hist.length > 20 ? comparePicker({ key: 'stock', symbols: compareSymbols(market.history, { exclude: [sym] }), onChange: () => drawTrade() }) : null;
   const chartPart = hist.length > 20
-    ? h('div', null, chartBox, legend([
-      { label: 'סגירה', color: '--s-1' }, { label: '▲ קנייה', color: '--up' }, { label: '▼ מכירה', color: '--down' },
-      ...(S.qty > 0 ? [{ label: `עלות ממוצעת ${usd(S.avgCost, { digits: 2 })}`, color: '--fg-2', dashed: true }] : [])]))
+    ? h('div', null, h('div', { class: 'cmp-bar' }, pickerS.el), chartBox, legendBox)
     : note(hasHistory(market) ? `אין היסטוריית מחירים ל-${sym} בגיליון המחירים, ולכן אין גרף. כדי להוסיף: להוסיף את הנייר לגיליון "FinanceAPP — מחירים".`
       : `אין עדיין היסטוריית מחירים${autoHistoryError ? ` (המשיכה האוטומטית נכשלה: ${autoHistoryError})` : ''}, ולכן אין גרף.`, { kind: 'info' });
-  if (hist.length > 20) {
+  let tc = null;
+  const drawTrade = async () => {
     /* מאז שבוע לפני הכניסה הראשונה — לא 2022 כולה בשביל נייר שנקנה אתמול */
     const from = S.firstDate ? new Date(Date.parse(S.firstDate) - 30 * 86400000).toISOString().slice(0, 10) : '';
-    const closes = hist.filter(x => x.date >= from);
-    /* setTimeout ולא requestAnimationFrame: rAF לא רץ בלשונית מוסתרת, והגרף לא היה מצויר עד שחוזרים אליה */
-    setTimeout(() => tradeChart(chartBox, { closes: closes.length > 1 ? closes : hist, markers, avgCost: S.qty > 0 ? S.avgCost : null, height: 300 })
-      .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))), 0);
-  }
+    const cut = hist.filter(x => x.date >= from);
+    const closes = cut.length > 1 ? cut : hist;
+    const cmp = pickerS.selected();
+    let opts = { closes, markers, avgCost: S.qty > 0 ? S.avgCost : null, height: 300 };
+    if (cmp.length) {
+      const f0 = closes[0].date, base = closeBefore(hist, f0) || closes[0].close;
+      const p = v => `${v > 0 ? '+' : ''}${v.toFixed(Math.abs(v) < 10 ? 1 : 0)}%`;
+      opts = { ...opts, format: p,
+        closes: rebasePct(hist, f0).map(x => ({ date: x.time, close: x.value })),
+        avgCost: S.qty > 0 ? (S.avgCost / base - 1) * 100 : null,
+        overlays: cmp.map(c => ({ color: c.color, data: rebasePct(market.history[c.sym] || [], f0) })) };
+    }
+    mount(legendBox, legend([
+      { label: cmp.length ? `${sym} · % מתחילת הגרף` : 'סגירה', color: '--s-1' }, { label: '▲ קנייה', color: '--up' }, { label: '▼ מכירה', color: '--down' },
+      ...cmp.map(c => ({ label: `${c.sym} · %`, color: c.color })),
+      ...(S.qty > 0 ? [{ label: `עלות ממוצעת ${usd(S.avgCost, { digits: 2 })}`, color: '--fg-2', dashed: true }] : [])]));
+    if (tc) { tc.remove(); tc = null; }
+    chartBox.replaceChildren();
+    try { tc = await tradeChart(chartBox, opts); }
+    catch (e) { mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' })); }
+  };
+  /* setTimeout ולא requestAnimationFrame: rAF לא רץ בלשונית מוסתרת, והגרף לא היה מצויר עד שחוזרים אליה */
+  if (hist.length > 20) setTimeout(drawTrade, 0);
 
   const edge = effRow ? effRow.edge : null;
   const strip = h('div', { class: 'strip' },

@@ -170,7 +170,13 @@ export function investSeries(rows, historyMap, fx, bench = 'IVV') {
     while (ci < ilsDays.length && ilsDays[ci].t <= p.t) { ilsByPort[ilsDays[ci].port] = ilsDays[ci].ils; ci++; }
     const ils = Object.values(ilsByPort).reduce((a, v) => a + v, 0);
     const rate = fxAtTime(fx.engineSeries, p.t, fxNow);
-    byDay.set(isoDay(p.t + 12 * 3600000), { p, usdCash, ilsCash: rate ? ils / rate : ils });   // חצות מקומית → אותו יום
+    /* התווית = היום האחרון שהנתונים שלו כבר בפנים. תנועות ומחירים נקראים
+       כ-'YYYY-MM-DD' = חצות UTC, והנקודה כוללת כל מה שזמנו ≤ p.t. לכן
+       התווית היא תאריך ה-UTC של p.t עצמו — בלי הזזה.
+       (באג 2.10.2026: היה isoDay(p.t + 12h). בישראל רשת המנוע היא חצות
+       מקומית = 21:00 UTC של אתמול, אז נקודה בשם X הכילה את המחירים של X−1:
+       כל קו השווי איחר ביום אחד מול קו המדד, ומול כל טיקר להשוואה.) */
+    byDay.set(isoDay(p.t), { p, usdCash, ilsCash: rate ? ils / rate : ils });
   });
   const days = [...byDay.keys()].sort();
   const value = [], invested = [], cashUsd = [];

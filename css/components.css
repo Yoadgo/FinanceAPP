@@ -222,3 +222,21 @@ label.small { display: grid; gap: 4px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 13px; }
 .kv > span:first-child { min-width: 0; }
 hr.sep { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+
+/* ── השוואה לטיקר (ui/comparePicker.js) ── */
+.cmp { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cmp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 0 2px 0 8px; height: 26px; border: 1px solid var(--line); border-radius: var(--r-chip); background: var(--card); font-size: 12px; }
+.cmp-chip i { width: 10px; height: 3px; border-radius: 2px; }
+.cmp-chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; min-width: 24px; min-height: 24px; border-radius: 4px; }
+.cmp-chip button:hover { background: var(--sunken); color: var(--fg); }
+.cmp-add { font: inherit; font-size: 12px; height: 26px; padding: 0 6px; border: 1px dashed var(--line-strong); border-radius: var(--r-chip); background: var(--card); color: var(--accent); cursor: pointer; }
+.cmp-add:disabled { color: var(--muted); cursor: not-allowed; }
+.cmp-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin-bottom: 8px; }
+/* פירוק "ממה מורכב השינוי" */
+.decomp { display: grid; gap: 4px; max-width: 560px; }
+.decomp .kv.total { border-top: 1px solid var(--line-strong); padding-top: 6px; margin-top: 2px; font-weight: 600; }
+.decomp .kv.sub { padding-inline-start: 14px; font-size: 12.5px; }
+.decomp .kv.pin .sym::after { content: ' · בהשוואה'; color: var(--muted); font-family: var(--sans); font-size: 11px; }
+.decomp-say { font-size: 13.5px; margin: 0 0 8px; }
+.range-in { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.range-in input[type=date] { font: inherit; font-size: 12px; height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--r-chip); background: var(--card); color: var(--fg); }

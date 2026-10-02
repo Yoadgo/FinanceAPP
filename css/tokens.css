@@ -50,6 +50,8 @@
   --s-1: #2563eb;            /* התיק */
   --s-2: #94a3b8;            /* ההון שהושקע */
   --s-3: #f59e0b;            /* המדד */
+  /* קווי השוואה לטיקר (עד 3) — שונים מהתיק, מההון, מהמדד ומירוק/אדום */
+  --cmp-1: #c026d3; --cmp-2: #0d9488; --cmp-3: #7c3aed;
 
   --sans: "IBM Plex Sans Hebrew", "Segoe UI", Arial, sans-serif;
   --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
@@ -82,7 +84,7 @@
     --accent: #5b8cff; --accent-soft: #172a4d; --on-accent: #0b1422;
     --attn: #e6a94f; --attn-soft: #33260f; --up: #34c77b; --up-soft: #0f2d1d; --down: #ff6b6f; --down-soft: #3a1618;
     --w-invest: #9d90f5; --w-spend: #f07fab; --w-save: #bf8ae9; --w-ingest: #6ea4ff;
-    --s-1: #5b8cff; --s-2: #64748b; --s-3: #fbbf24;
+    --s-1: #5b8cff; --s-2: #64748b; --s-3: #fbbf24; --cmp-1: #e879f9; --cmp-2: #2dd4bf; --cmp-3: #a78bfa;
     --shadow-float: 0 16px 40px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
     color-scheme: dark;
   }
@@ -94,7 +96,7 @@
   --accent: #5b8cff; --accent-soft: #172a4d; --on-accent: #0b1422;
   --attn: #e6a94f; --attn-soft: #33260f; --up: #34c77b; --up-soft: #0f2d1d; --down: #ff6b6f; --down-soft: #3a1618;
   --w-invest: #9d90f5; --w-spend: #f07fab; --w-save: #bf8ae9; --w-ingest: #6ea4ff;
-  --s-1: #5b8cff; --s-2: #64748b; --s-3: #fbbf24;
+  --s-1: #5b8cff; --s-2: #64748b; --s-3: #fbbf24; --cmp-1: #e879f9; --cmp-2: #2dd4bf; --cmp-3: #a78bfa;
   --shadow-float: 0 16px 40px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
   color-scheme: dark;
 }

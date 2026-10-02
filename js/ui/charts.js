@@ -34,7 +34,9 @@ export function loadCharts() {
 export const token = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /* גרף סדרות זמן.
-   series: [{ name, color: '--s-1', data: [{ time: 'YYYY-MM-DD', value }], kind: 'area'|'line', dashed }]
+   series: [{ name, color: '--s-1', data: [{ time: 'YYYY-MM-DD', value }], kind: 'area'|'line', dashed,
+              scale: 'left' (ציר שמאלי משלו — קו השוואה באחוזים), format (לסדרה הזו),
+              markers: [{ time, position, color, shape, text }] (חצי הפקדה/משיכה) }]
    format: v => טקסט לציר ולתווית                                       */
 export async function timeChart(el, { series, format = v => v.toFixed(0), height }) {
   const L = await loadCharts();
@@ -45,19 +47,23 @@ export async function timeChart(el, { series, format = v => v.toFixed(0), height
     layout: { background: { type: 'solid', color: 'transparent' }, textColor: muted, fontFamily: token('--mono') || 'monospace', fontSize: 11 },
     grid: { vertLines: { color: grid }, horzLines: { color: grid } },
     rightPriceScale: { borderColor: grid, scaleMargins: { top: 0.08, bottom: 0.04 } },
+    leftPriceScale: { visible: series.some(s => s.scale === 'left'), borderColor: grid, scaleMargins: { top: 0.08, bottom: 0.04 } },
     timeScale: { borderColor: grid, timeVisible: false, rightOffset: 2 },
     crosshair: { mode: 0, vertLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') }, horzLine: { color: fg, width: 1, style: 3, labelBackgroundColor: token('--chrome') } },
-    localization: { priceFormatter: format, locale: 'en-US' },
+    /* בלי priceFormatter גלובלי: הוא דורס את הפורמט של כל ציר, וקו השוואה באחוזים
+       על הציר השמאלי היה מקבל "$-11". כל סדרה נושאת priceFormat משלה. */
+    localization: { locale: 'en-US' },
     handleScale: { axisPressedMouseMove: false },
   });
   series.forEach(s => {
     const color = s.color.startsWith('--') ? token(s.color) : s.color;
     const opts = { color, lineColor: color, lineWidth: s.kind === 'area' ? 2 : 2, priceLineVisible: false, lastValueVisible: true, lineStyle: s.dashed ? 2 : 0,
-      priceFormat: { type: 'custom', formatter: format } };
+      priceFormat: { type: 'custom', formatter: s.format || format }, ...(s.scale === 'left' ? { priceScaleId: 'left' } : {}) };
     const ser = s.kind === 'area'
       ? chart.addSeries(L.AreaSeries, { ...opts, topColor: hexA(color, .22), bottomColor: hexA(color, 0) })
       : chart.addSeries(L.LineSeries, opts);
     ser.setData(s.data);
+    if (s.markers && s.markers.length && L.createSeriesMarkers) L.createSeriesMarkers(ser, snapMarkers(s.markers, s.data));
   });
   chart.timeScale().fitContent();
   return chart;
@@ -67,11 +73,13 @@ export async function timeChart(el, { series, format = v => v.toFixed(0), height
    מעל) + קו מקווקו של העלות הממוצעת של מה שעדיין מוחזק.
    closes: [{ date, close }] · markers: [{ date, side, qty, price }]
    נקודה בתאריך שאין לו סגירה (סוף שבוע, חור) נצמדת לסגירה הקודמת. */
-export async function tradeChart(el, { closes, markers = [], avgCost = null, height = 300 }) {
+/* overlays: [{ color, data: [{ time, value }] }] — קווי השוואה. כשיש כאלה
+   המסך שולח את הכול באחוזים מתחילת הטווח (גם closes ו-avgCost) ו-format של אחוז. */
+export async function tradeChart(el, { closes, markers = [], avgCost = null, height = 300, overlays = [], format = null }) {
   const L = await loadCharts();
   el.style.height = `${height}px`;
   const grid = token('--grid'), muted = token('--muted'), fg = token('--fg-2');
-  const fmt = v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = format || (v => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const chart = L.createChart(el, {
     autoSize: true,
     layout: { background: { type: 'solid', color: 'transparent' }, textColor: muted, fontFamily: token('--mono') || 'monospace', fontSize: 11 },
@@ -96,14 +104,19 @@ export async function tradeChart(el, { closes, markers = [], avgCost = null, hei
     })).sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     L.createSeriesMarkers(ser, ms);
   }
-  if (avgCost > 0) ser.createPriceLine({ price: avgCost, color: fg, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'עלות' });
+  if (avgCost !== null && (format ? isFinite(avgCost) : avgCost > 0)) ser.createPriceLine({ price: avgCost, color: fg, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'עלות' });
+  overlays.forEach(o => {
+    const c = o.color.startsWith('--') ? token(o.color) : o.color;
+    chart.addSeries(L.LineSeries, { color: c, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, priceFormat: { type: 'custom', formatter: fmt } }).setData(o.data);
+  });
   chart.timeScale().fitContent();
   return chart;
 }
 
 /* גרף עמודות לרווח לפי תקופה: ירוק מעל 0, אדום מתחת.
-   bars: [{ time: 'YYYY-MM-DD', value }] */
-export async function barChart(el, { bars, format = v => v.toFixed(0), height = 260 }) {
+   bars: [{ time: 'YYYY-MM-DD', value }]
+   lines: [{ color, data }] — נקודות השוואה (תשואת נייר באותה תקופה), על אותו ציר. */
+export async function barChart(el, { bars, format = v => v.toFixed(0), height = 260, lines = [] }) {
   const L = await loadCharts();
   el.style.height = `${height}px`;
   const grid = token('--grid'), muted = token('--muted'), fg = token('--fg-2');
@@ -120,6 +133,11 @@ export async function barChart(el, { bars, format = v => v.toFixed(0), height = 
   const up = token('--up'), down = token('--down');
   const ser = chart.addSeries(L.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'custom', formatter: format }, base: 0 });
   ser.setData(bars.map(b => ({ time: b.time, value: b.value, color: b.value >= 0 ? up : down })));
+  lines.forEach(o => {
+    const c = o.color.startsWith('--') ? token(o.color) : o.color;
+    chart.addSeries(L.LineSeries, { color: c, lineWidth: 1, lineStyle: 1, lineVisible: true, pointMarkersVisible: true, pointMarkersRadius: 3.5,
+      priceLineVisible: false, lastValueVisible: false, priceFormat: { type: 'custom', formatter: format } }).setData(o.data);
+  });
   chart.timeScale().fitContent();
   return chart;
 }
@@ -176,6 +194,15 @@ export function allocation(parts, { max = 8 } = {}) {
       h('span', null, p.label),
       h('span', { class: 'num muted' }, p.text || ''),
       h('span', { class: 'num' }, `${((p.value / total) * 100).toFixed(1)}%`)))));
+}
+
+/* סמן חייב לשבת על זמן שקיים בסדרה — נצמד לנקודה האחרונה שלפניו (או הראשונה). */
+function snapMarkers(markers, data) {
+  const times = data.map(d => d.time);
+  if (!times.length) return [];
+  const snap = t => { let x = null; for (const y of times) { if (y <= t) x = y; else break; } return x || times[0]; };
+  return markers.map(m => ({ ...m, time: snap(m.time), color: m.color && m.color.startsWith('--') ? token(m.color) : m.color }))
+    .sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
 }
 
 function hexA(hex, a) {

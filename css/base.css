@@ -31,6 +31,7 @@ img, svg { max-width: 100%; }
 .num.up { color: var(--up); }
 .num.down { color: var(--down); }
 .num.muted { color: var(--muted); }
+.num.attn { color: var(--attn); }
 
 /* תחזית — תמיד מסומנת אחרת מנתון מדוד (אפיון, עולם החסכונות) */
 .forecast { font-style: italic; color: var(--fg-2); }
