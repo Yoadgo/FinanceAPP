@@ -135,7 +135,7 @@ export function dailyPnl(rows, history, { fx = null, to = null } = {}) {
       if (Math.abs(c) > 1e-9) contrib[s] = c;
     });
     const otherUsd = other.usd + (rt ? other.ils / rt : 0);
-    days.push({ date: d, mv, mvIls, pnlUsd, pnlIls, buysUsd, prevMv, contrib, otherUsd, fallback: fell });
+    days.push({ date: d, mv, mvIls, pnlUsd, pnlIls, buysUsd, buysIls: rt ? buysUsd * rt : null, prevMv, prevMvIls, contrib, otherUsd, fallback: fell });
     prevMv = mv; prevMvIls = mvIls; prevByS = byS;
   }
   return { days, fallbackDays, missingFx: [...missing].sort() };
@@ -155,19 +155,20 @@ export function aggregate(days, { res = 'day', from = '0000', to = '9999', cur =
   const B = new Map();
   days.filter(d => d.date >= from && d.date <= to).forEach(d => {
     const k = periodKey(d.date, res);
-    const b = B.get(k) || { key: k, from: d.date, to: d.date, pnl: 0, complete: true, startMv: d.prevMv, buys: 0, mvEnd: 0, mvEndIls: null, days: 0, contrib: {}, otherUsd: 0, fallback: false };
+    const b = B.get(k) || { key: k, from: d.date, to: d.date, pnl: 0, complete: true, startMv: d.prevMv, startMvIls: d.prevMvIls, buys: 0, buysIls: 0, mvEnd: 0, mvEndIls: null, days: 0, contrib: {}, otherUsd: 0, fallback: false };
     const v = pick(d);
     if (v === null) b.complete = false; else b.pnl += v;
-    b.to = d.date; b.days++; b.buys += d.buysUsd; b.mvEnd = d.mv; b.mvEndIls = d.mvIls;
+    b.to = d.date; b.days++; b.buys += d.buysUsd; b.buysIls = b.buysIls === null || d.buysIls === null ? null : b.buysIls + d.buysIls; b.mvEnd = d.mv; b.mvEndIls = d.mvIls;
     b.otherUsd += d.otherUsd; b.fallback = b.fallback || d.fallback;
     Object.entries(d.contrib).forEach(([s, c]) => { b.contrib[s] = (b.contrib[s] || 0) + c; });
     B.set(k, b);
   });
   const list = [...B.values()].map(b => {
     /* תשואה: רווח ÷ (שווי בתחילת התקופה + מחצית הקניות) — שיטת דיץ הפשוטה.
-       בדולרים בלבד; בשקלים מוצג אותו אחוז (הוא לא תלוי במטבע הבסיס כמעט). */
-    const base = b.startMv + 0.5 * b.buys;
-    return { ...b, pnl: b.complete ? b.pnl : null, pct: b.complete && base > 1 && cur === 'usd' ? b.pnl / base : null };
+       כל מטבע מול הבסיס שלו: בשקלים הרווח והבסיס שניהם בשקלים, ולכן האחוז
+       כולל את תנועת הדולר (כמו הסכום). חסר שער → אין אחוז. */
+    const base = cur === 'ils' ? (b.startMvIls === null || b.buysIls === null ? null : b.startMvIls + 0.5 * b.buysIls) : b.startMv + 0.5 * b.buys;
+    return { ...b, pnl: b.complete ? b.pnl : null, pct: b.complete && base !== null && base > 1 ? b.pnl / base : null };
   });
   const vals = list.filter(b => b.pnl !== null);
   const total = vals.length === list.length ? vals.reduce((s, b) => s + b.pnl, 0) : null;

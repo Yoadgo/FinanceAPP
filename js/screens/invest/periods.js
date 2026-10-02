@@ -21,7 +21,7 @@ const RES = [['day', 'יומי'], ['week', 'שבועי'], ['month', 'חודשי'
 const PRESETS = [['1M', 'חודש'], ['3M', '3 חודשים'], ['YTD', 'מתחילת השנה'], ['1Y', 'שנה'], ['ALL', 'הכל']];
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
-const st = { res: 'week', cur: 'usd', portfolio: 'all', preset: '3M', from: '', to: '' };
+const st = { res: 'week', cur: 'usd', unit: 'pct', portfolio: 'all', preset: '3M', from: '', to: '' };
 let cache = { key: '', D: null };
 
 export async function render(el, ctx) {
@@ -104,8 +104,16 @@ function draw(el, inv, market) {
     kpi({ label: 'ממוצע לתקופה', value: A.total === null ? '—' : money(A.total / A.count, { sign: true }), size: 'sm', cls: dirClass(A.total) }));
 
   const chartBox = h('div', { class: 'stock-chart', style: { minHeight: '260px' } });
-  const bars = A.periods.filter(p => p.pnl !== null).map(p => ({ time: p.from, value: p.pnl }));
-  setTimeout(() => barChart(chartBox, { bars, format: v => (st.cur === 'ils' ? '₪' : '$') + Math.round(v).toLocaleString('en-US'), height: 260 })
+  /* הגרף: ברירת המחדל אחוזים (תשואת התקופה) — כך שבוע מ-2022 ושבוע מ-2026 ברי השוואה
+     גם כשהתיק גדל פי כמה. המתג בכותרת הגרף מחזיר לסכומים. */
+  const sym = st.cur === 'ils' ? '₪' : '$';
+  const asPct = st.unit === 'pct';
+  const bars = asPct
+    ? A.periods.filter(p => p.pct !== null).map(p => ({ time: p.from, value: p.pct * 100 }))
+    : A.periods.filter(p => p.pnl !== null).map(p => ({ time: p.from, value: p.pnl }));
+  const fmt = asPct ? v => `${v.toFixed(Math.abs(v) < 10 ? 1 : 0)}%` : v => sym + Math.round(v).toLocaleString('en-US');
+  const noPct = asPct ? A.periods.filter(p => p.pnl !== null && p.pct === null).length : 0;
+  setTimeout(() => barChart(chartBox, { bars, format: fmt, height: 260 })
     .catch(e => mount(chartBox, note(`הגרף לא נטען: ${e.message || e}`, { kind: 'bad' }))), 0);
 
   const notes = [];
@@ -135,7 +143,9 @@ function draw(el, inv, market) {
   });
 
   mount(el, head(tools), rangeBar, strip, ...notes,
-    h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `רווח ${RES.find(r => r[0] === st.res)[1]}`), h('span', { class: 'chart-note' }, st.cur === 'ils' ? '₪' : '$')), h('div', { class: 'panel-b' }, chartBox)),
+    h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `רווח ${RES.find(r => r[0] === st.res)[1]}`), seg('יחידות הגרף', [['pct', '%'], ['amt', sym]], st.unit, v => { st.unit = v; redraw(); })),
+      h('div', { class: 'panel-b' }, chartBox,
+        asPct ? h('p', { class: 'small muted', style: { marginTop: '6px' } }, `אחוז = רווח התקופה חלקי ההון שהיה מושקע בה (שווי בתחילתה + מחצית הקניות).${noPct ? ` ${noPct} תקופות בלי הון מושקע בתחילתן לא מוצגות.` : ''}`) : null)),
     h('section', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, `לפי ${{ day: 'יום', week: 'שבוע', month: 'חודש' }[st.res]} · ${A.count}`), h('span', { class: 'chart-note' }, 'לחיצה = ממה הרווח מורכב')), h('div', { class: 'panel-b flush' }, tbl)),
     h('p', { class: 'small muted' }, 'איך זה מחושב: רווח = השינוי בשווי האחזקות + מה שנכנס מהן (מכירות, דיבידנדים, זיכויי מס) − מה שיצא אליהן (קניות כולל עמלה, מס, ריבית חובה, דמי טיפול). הפקדות ומשיכות לא נספרות כרווח. התרומה של כל נייר — בדולרים.'));
 }
