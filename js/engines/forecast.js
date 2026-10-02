@@ -16,7 +16,8 @@
            returns: [low, base, high] (% לשנה, ריאלי),
            feeBalancePct, feeDepositPct, endDate?: 'YYYY-MM', target? }
    ================================================================ */
-export const DEFAULT_RETURNS = { pension: [2, 3.5, 5], study: [2, 4, 6], house: [1, 2, 3], savings: [1, 3, 5], other: [1, 3, 5] };
+/* פנסיה והשתלמות: 3/5/7 — אושר 2.10.2026 (שתי הקופות במסלול מחקה S&P 500). */
+export const DEFAULT_RETURNS = { pension: [3, 5, 7], study: [3, 5, 7], house: [1, 2, 3], savings: [1, 3, 5], other: [1, 3, 5] };
 export const KIND_LABEL = { pension: 'פנסיה', study: 'קרן השתלמות', house: 'חיסכון לבית', savings: 'חיסכון', other: 'אחר' };
 
 const addMonths = (ym, k) => {

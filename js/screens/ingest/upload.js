@@ -16,15 +16,17 @@ import * as store from '../../core/store.js';
 import { clearSpendCache } from '../spend/data.js';
 import { hrefOf } from '../../core/routes.js';
 import { isIbiSheet } from '../../engines/ibiImport.js';
+import { isHarelSheet } from '../../engines/harel.js';
 
 export async function render(el, ctx) {
   const status = h('div');
   const input = h('input', { id: 'up-file', type: 'file', accept: '.xls,.xlsx' });
   const zone = h('label', { class: 'dropzone', for: 'up-file' },
     h('b', null, 'לגרור לכאן קובץ, או ללחוץ לבחירה'),
-    h('span', { class: 'small muted' }, 'פירוט אשראי של הבינלאומי (xls), דוח תנועות עו"ש (xlsx), או ייצוא תנועות מאיביאי (data N.xlsx). הקובץ נקרא בדפדפן בלבד.'),
+    h('span', { class: 'small muted' }, 'פירוט אשראי של הבינלאומי (xls), דוח תנועות עו"ש (xlsx), ייצוא תנועות מאיביאי (data N.xlsx), או אקסל הפקדות מהראל (השתלמות / פנסיה). הקובץ נקרא בדפדפן בלבד.'),
     input);
-  const go = f => f && handle(f, status);
+  /* איפוס הבחירה: אותו קובץ פעמיים ברצף (קליטה חוזרת לבדיקה) עדיין מפעיל change. */
+  const go = f => { if (f) handle(f, status); input.value = ''; };
   input.addEventListener('change', () => go(input.files[0]));
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('over'));
@@ -45,6 +47,10 @@ async function handle(file, status) {
   /* ייצוא איביאי — זרימה נפרדת (בחירת תיק, השוואה לתנועות הקיימות). */
   const ibi = wb.sheets.find(sh => isIbiSheet(sh.values));
   if (ibi) { const { showIbi } = await import('./ibi.js'); await showIbi(status, wb, ibi.values); return; }
+
+  /* אקסל הפקדות מהראל (השתלמות או פנסיה) — זרימה נפרדת: בחירת קופה. */
+  const harel = wb.sheets.find(sh => isHarelSheet(sh.values));
+  if (harel) { const { showHarel } = await import('./harel.js'); await showHarel(status, wb, harel.values); return; }
 
   try { ctxData = await loadContext(); }
   catch (e) { mount(status, errorState({ title: 'הנתונים הקיימים לא נקראו', error: e })); return; }

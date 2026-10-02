@@ -8,6 +8,7 @@ import { emptyState, errorState, loading, table, chip, kpi } from '../../ui/comp
 import { timeChart, legend, PALETTE } from '../../ui/charts.js';
 import { ils, todayIso } from '../../core/format.js';
 import { projectPot, projectAll, reachesTarget, annuity, KIND_LABEL } from '../../engines/forecast.js';
+import { effectiveMonthly } from '../../engines/harel.js';
 import * as store from '../../core/store.js';
 import { hrefOf } from '../../core/routes.js';
 
@@ -23,7 +24,8 @@ export async function render(el) {
     mount(el, head(), emptyState({ title: 'אין קופות לתחזית', text: 'התחזית נבנית מהקופות: יתרה, הפקדה חודשית ותשואה. מוסיפים אותן במסך הקופות.', actions: [h('a', { class: 'btn primary', href: hrefOf('save', 'funds') }, 'להוספת קופה')] }));
     return;
   }
-  draw(el, pots);
+  /* ההפקדה בפועל (מאקסל הראל) כשנקלטה — במקום מה שהוזן ידנית. */
+  draw(el, pots.map(p => ({ ...p, monthly: effectiveMonthly(p).value })));
 }
 
 function head(tools) {
